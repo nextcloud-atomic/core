@@ -7,9 +7,16 @@ edition = "2021"
 
 [dependencies]
 
-bcrypt = "0.8.2"
+bcrypt = { version = "0.15.0", features = ["default", "js"] }
 hex-literal = "0.4.1"
 hkdf = "0.12"
 sha2 = "0.10.8"
 rand = "0.8.5"
+dioxus = "0.4.3"
+dioxus-fullstack = "0.4.3"
+serde = "1.0.196"
 
+[features]
+default = []
+ssr = ["dioxus-fullstack/axum"]
+web = ["dioxus-fullstack/web"]
