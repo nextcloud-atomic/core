@@ -1,0 +1,12 @@
+[application]
+name = "ncp_activation"
+default_platform = "web"
+
+[web.app]
+title = "NCP Activation"
+
+[web.watcher]
+
+[web.resource]
+
+[web.resource.dev]
