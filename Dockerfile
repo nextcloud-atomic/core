@@ -13,8 +13,11 @@ RUN dx build --features web --release && dx build --features ssr --release --pla
 
 FROM debian:latest
 
-ENV NCP_CONFIG_SOURCE=/lib/ncp
+ENV NCP_CONFIG_SOURCE=/resource
 ENV NCP_CONFIG_TARGET=/etc/ncp
 
+RUN apt-get update && apt-get install -y libssl-dev
+
+COPY resource /resource
 COPY --from=builder /usr/src/ncp-activation/dist /dist
 CMD ["/dist/ncp-activation"]

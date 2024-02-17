@@ -1,5 +1,5 @@
 [package]
-name = "ncp-activation"
+name = "ncp-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,13 +19,37 @@ tera = "1.19.1"
 strum = "0.26.1"
 strum_macros = "0.26.1"
 #crypto = { version = "0.5.1", features = ["digest", "password-hash", "cipher", "universal-hash"] }
-ring = { version = "0.17.7", features = ["default", "wasm32_unknown_unknown_js"] }
+ring = { version = "0.17.7", features = ["default", "wasm32_unknown_unknown_js", "std"] }
 log = "0.4.20"
 base64 = "0.21.7"
 tokio = { version = "1.36.0", features = ["rt", "rt-multi-thread", "macros"], optional = true }
 hex = "0.4.3"
 base32 = "0.4.0"
 reqwest = "0.11.24"
+ncp_core_derive = {path = "./ncp_core_derive"}
+serde_json = "1.0.113"
+serde-inline-default = "0.2.0"
+fermi = "0.4.3"
+async-std = { version = "1.12.0", features = [] }
+instant = "0.1.12"
+wasm-bindgen = { version = "0.2"}
+regex = "1.10.3"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["Window", "Location"]
+
+[lib]
+name = "ncp_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ncp-config"
+path = "src/bin/ncp-config.rs"
+
+[[bin]]
+name = "ncp-activation"
+path = "src/bin/ncp-activation.rs"
 
 [features]
 default = []
