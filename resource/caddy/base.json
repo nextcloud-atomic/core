@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "http": {
+      "servers": {
+        "ncp-activation": {
+          "listen": [":443", ":80"],
+          "routes": [
+            {
+              "test": [{
+                "handler": "static_response",
+                "body": "This server is currently in maintenance mode."
+              }]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
