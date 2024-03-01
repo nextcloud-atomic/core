@@ -941,6 +941,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-logger"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d7cbab0b5519060fe9e14b3c21e3f2329b8386cd905618f78c7b929cd00cf54"
+dependencies = [
+ "log",
+ "time",
+ "web-sys",
+]
+
+[[package]]
 name = "dioxus-router"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2095,6 +2106,7 @@ dependencies = [
  "bollard",
  "dioxus",
  "dioxus-fullstack",
+ "dioxus-logger",
  "fermi",
  "hex",
  "hex-literal",
@@ -2105,6 +2117,7 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
+ "sd-notify",
  "serde",
  "serde-inline-default",
  "serde_json",
@@ -2766,6 +2779,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sd-notify"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "621e3680f3e07db4c9c2c3fb07c6223ab2fab2e54bd3c04c3ae037990f428c32"
+
+[[package]]
 name = "security-framework"
 version = "2.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3229,6 +3248,7 @@ checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
 dependencies = [
  "deranged",
  "itoa",
+ "js-sys",
  "num-conv",
  "powerfmt",
  "serde",

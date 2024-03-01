@@ -10,10 +10,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::rc::Rc;
 use async_std::prelude::StreamExt;
-use bollard::Docker;
-use bollard::models::ContainerSummary;
-use dioxus::html::summary;
-use serde::{Serialize, Serializer};
+use async_std::task::sleep;
+use log::{info, LevelFilter};
+use serde::{Deserialize, Serialize, Serializer};
 use tera::Context;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -21,13 +20,25 @@ use web_sys::{window, Window};
 use web_sys::js_sys::JsString;
 use ncp_core::config::{NcAioConfig, NcpConfig};
 use ncp_core::crypto::{Crypto, CryptoValueProvider};
-use ncp_core::error::NcpError;
-
-use ncp_core::templating::render_template;
+use regex::Regex;
 
 #[cfg(feature = "ssr")]
-use {std::time::Duration, std::process::exit};
-use regex::Regex;
+use {
+    std::time::Duration,
+    std::process::exit,
+    ncp_core::templating::render_template,
+    ncp_core::error::NcpError,
+    sd_notify::notify,
+    sd_notify::NotifyState,
+    bollard::Docker,
+    bollard::models::ContainerSummary,
+    bollard::container::ListContainersOptions
+};
+#[cfg(not(feature = "ssr"))]
+use {
+   instant::Duration
+};
+
 
 #[cfg(feature = "ssr")]
 fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
@@ -40,6 +51,7 @@ fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
 }
 
 fn main() {
+    dioxus_logger::init(LevelFilter::Info).expect("failed to init logger");
     let mut launcher = LaunchBuilder::new(app);
     launcher = set_server_address(launcher);
     launcher.launch();
@@ -51,6 +63,7 @@ fn print_err<E: std::error::Error>(e: E) -> E {
     e
 }
 
+#[cfg(feature = "ssr")]
 fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathBuf, aio_render_path: PathBuf) -> Result<(), ServerFnError> {
     let mut tera_ctx = Context::new();
     tera_ctx.insert("NC_AIO_CONFIG", &cfg);
@@ -80,6 +93,7 @@ async fn activate_ncp(user_pass: String) -> Result<(), ServerFnError> {
                       &crypto,
                       config_template_base_path.join("nextcloud-aio"),
                       config_render_base_path.join("nextcloud-aio"))?;
+    notify(true, &[NotifyState::Ready]);
     Ok(())
     //    .expect("Failed to create master key from password");
 }
@@ -96,7 +110,8 @@ async fn terminate() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-struct ContainerStatusResult {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ContainerStatusResult {
     containers: Vec<String>,
     ready: bool,
     docker_version: String,
@@ -105,8 +120,8 @@ struct ContainerStatusResult {
 impl Display for ContainerStatusResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = (match self.ready {
-            true => "Waiting for containers:\n=> ",
-            false => "All containers started!\n=> "
+            false => "Waiting for containers:\n=> ",
+            true => "All containers started!\n=> "
         }).to_string()
             + self.containers.join("\n=> ").as_str()
             + format!("\n\n (docker version: {})", self.docker_version).as_str();
@@ -118,15 +133,41 @@ impl Display for ContainerStatusResult {
 async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
     let docker = Docker::connect_with_socket_defaults()?;
     let version = docker.version().await?;
-    let containers = docker.list_containers().await?
-        .iter().filter_map(|summary| {
-        format!("{}: {} ({}s)", summary.image, summary.status, summary.created)
+    let options = Some(ListContainersOptions::<String>{
+        all: true,
+        ..Default::default()
     });
-    ContainerStatusResult {
-        ready: false,
+    let containers = docker.list_containers(options).await?;
+    let container_strings = containers
+        .iter().filter_map(move |s| {
+        let names = s.names.clone().unwrap_or(vec!());
+        if !names.iter().any(|name| name.starts_with("/nextcloud-aio") || name == "ncp-caddy") {
+            println!("names: [{}]", names.join(", "));
+            return None
+        }
+        Some(format!("{}/{}: {} ({:?}s) - [{}]",
+                s.image_id.clone().unwrap_or("unknown".into()),
+                s.image.clone().unwrap_or("unknown".into()),
+                s.status.clone().unwrap_or("unknown".into()),
+                s.created.unwrap_or(0).to_string(),
+                s.names.clone().unwrap_or(vec!()).join(", ")
+        ))
+    }).collect();
+    let is_ready = containers.iter().any(|container| {
+        println!("{}", container.state.clone().unwrap());
+        container.state.clone().unwrap_or("unknown".into()) == "running" &&
+            container.names.clone().unwrap_or(vec![]).iter().any(|s| s == "/nextcloud-aio-apache")
+    });
+    Ok(ContainerStatusResult {
+        ready: is_ready,
         docker_version: version.version.unwrap(),
-        containers,
-    }
+        containers: container_strings,
+    })
+}
+
+#[server]
+async fn caddy_enable_nextcloud() -> Result<(), ServerFnError>{
+    Ok(())
 }
 
 #[wasm_bindgen]
@@ -144,40 +185,20 @@ pub fn app(cx: Scope) -> Element {
     let mut activated = use_state(cx, || false);
     let mut nextcloud_reachable = use_state(cx, || false);
     let mut containers_status: &UseState<Option<ContainerStatusResult>> = use_state(cx, || None);
-    // let eval = use_eval(cx);
-    // let nc_status_check = use_coroutine(cx, |mut rx: UnboundedReceiver<bool>|  {
-    //     to_owned![nextcloud_reachable];
-    //     async move {
-    //         rx.next().await;
-    //         let loc = get_location().expect("Failed to get window.location");
-    //         let re = Regex::new(r"/$");
-    //         let loc_str = re.unwrap().replace(&loc.as_string().unwrap(), "").to_string();
-    //         async_std::task::sleep(instant::Duration::from_millis(5000)).await;
-    //         loop {
-    //             async_std::task::sleep(instant::Duration::from_millis(1000)).await;
-    //             let response = reqwest::get(format!("{}/login", loc_str)).await;
-    //
-    //             if response.is_ok() {
-    //                 let result = response.unwrap();
-    //                 if result.status() == 200 && result.text().await.unwrap().contains("_oc_debug") {
-    //                     nextcloud_reachable.set(true);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // });
-    let nc_status_check = use_coroutine(cx, |mut rx: UnboundedReceiver<ContainerStatusResult>| {
+    let nc_status_check = use_coroutine(cx, |mut rx: UnboundedReceiver<bool>| {
         to_owned![containers_status, error_message];
         async move {
             rx.next().await;
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            let mut ready = false;
+            while !ready {
+                sleep(Duration::from_millis(1000)).await;
                 match check_aio_started().await {
                     Ok(result) => {
-                        containers_status.set(Some(result))
+                        ready = result.ready;
+                        containers_status.set(Some(result));
                     }
                     Err(e) => {
-                        error_message.set(Some(e.to_string()))
+                        error_message.set(Some(e.to_string()));
                     }
                 }
             }
@@ -215,9 +236,9 @@ pub fn app(cx: Scope) -> Element {
                 "{status}",
             },
             pre {
-                match containers_status {
+                match containers_status.current().as_ref() {
                     Some(val) => val.to_string(),
-                    None => ""
+                    None => "".to_string()
                 }
             }
 

@@ -13,8 +13,9 @@ RUN dx build --features web --release && dx build --features ssr --release --pla
 
 FROM debian:latest
 
-ENV NCP_CONFIG_SOURCE=/resource
+ENV NCP_CONFIG_SOURCE=/resource/templates
 ENV NCP_CONFIG_TARGET=/etc/ncp
+ENV CADDY_ADDRESS=unix:/run/caddy-admin.sock
 
 RUN apt-get update && apt-get install -y libssl-dev
 
