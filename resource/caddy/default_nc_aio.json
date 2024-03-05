@@ -1,0 +1,49 @@
+{
+  "apps": {
+    "http": {
+      "servers": {
+        "srv": {
+          "listen": ["0.0.0.0:443"],
+          "routes": [{
+            "match": [
+              {
+                "host": ["localhost", "nextcloudpi.local"]
+              }
+            ],
+            "terminal": true,
+            "tls": {
+              "automation": {
+                "policies": [{
+                  "issues":  [{
+                    "module": "internal"
+                  }],
+                  "subjects": ["localhost", "nextcloudpi.local"]
+                }]
+              }
+            },
+            "handle": [
+              {
+                "handler": "headers",
+                "response": {
+                  "set": {"Content-Type": ["text/html"]}
+                }
+              },
+              {
+                "handler": "reverse_proxy",
+                "dynamic_upstreams": {
+                  "name": "nextcloud-aio-apache",
+                  "port": 80,
+                  "refresh": 5000000000,
+                  "resolver": {
+                    "addressess": ["127.0.0.11"]
+                  },
+                  "source": "a"
+                }
+              }
+            ]
+          }]
+        }
+      }
+    }
+  }
+}
