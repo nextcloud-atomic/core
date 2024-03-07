@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use crate::crypto;
-use crate::crypto::{Crypto, CryptoUser, CryptoValueProvider};
+use crate::crypto::{Crypto, CryptoValueProvider};
 use crate::error::NcpError;
 
 #[derive(Clone, Default, Serialize, Deserialize)]

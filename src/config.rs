@@ -50,7 +50,7 @@ pub struct NcAioConfig {
 
 impl NcAioConfig {
     pub fn create() -> Self {
-        let mut cfg: NcAioConfig = serde_json::from_str("{}")
+        let cfg: NcAioConfig = serde_json::from_str("{}")
             .expect("Failed to create ncp config");
         cfg
     }

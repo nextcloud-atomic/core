@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 use hex_literal::hex;
 use ring::{aead, digest, hkdf, pbkdf2};
-use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, Tag, UnboundKey};
+use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, UnboundKey};
 use ring::digest::{digest, SHA512_OUTPUT_LEN};
 use ring::hkdf::{HKDF_SHA256};
 use ring::pbkdf2::PBKDF2_HMAC_SHA512;
@@ -145,10 +145,10 @@ impl Crypto {
         let sha256 = digest(&digest::SHA256, secret_key.as_bytes());
         let hdkf_salt = hkdf::Salt::new(HKDF_SHA256, sha256.as_ref());
         match hdkf_salt.extract(&self.kdk).expand(&[&INFO], HkdfMy(42)) {
-            Ok(myOkm) => {
-                let HkdfMy(okm) = myOkm.into();
+            Ok(my_okm) => {
+                let HkdfMy(okm) = my_okm.into();
                 Ok(okm)
-            },
+            }
             Err(_) => Err("Failed to derive okm".into())
         }
     }
@@ -257,14 +257,11 @@ pub trait CryptoValueProvider<T> {
 mod tests {
     use super::*;
     use std::borrow::Borrow;
-    use std::io::Read;
-    use hex::ToHex;
     use std::str;
-    use ring::test;
 
     #[test]
     fn create_crypto() {
-        let mut crypto = Crypto::new("0.0.0", "test")
+        let crypto = Crypto::new("0.0.0", "test")
             .expect("crypto could not be initialized");
         assert_eq!(crypto.locked, false);
         let derived = crypto.derive_secret("abcdef").expect("failed to derive secret");
