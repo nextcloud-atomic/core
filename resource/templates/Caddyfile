@@ -1,0 +1,10 @@
+{
+  admin unix//run/caddy.sock {
+  }
+  persist_config off
+}
+
+localhost {
+  reverse_proxy /activate ncp-activation:8080;
+  respond / "NextcloudPi is still starting... Please refresh this page in a few seconds."
+}
