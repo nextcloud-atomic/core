@@ -5,11 +5,11 @@ FROM rust:1.72 as builder
 RUN apt-get update && apt-get install -y clang
 #ENV OPENSSL_DIR=/usr
 RUN rustup target add wasm32-unknown-unknown && cargo install dioxus-cli
-WORKDIR /usr/src/ncp-activation
+WORKDIR /usr/src/nextcloud-atomic
 COPY . .
 RUN dx build --features web --release && dx build --features server --release --platform desktop
 #CMD ["trunk", "serve", "--address", "0.0.0.0", "--port", "${PORT}", "--features", "server", "--release", ""]
-#CMD ["cargo", "run", "--bin", "ncp-activation", "--features", "server"]
+#CMD ["cargo", "run", "--bin", "nextcloud-atomic", "--features", "server"]
 
 FROM debian:latest
 
@@ -20,5 +20,5 @@ ENV CADDY_ADDRESS=unix:/run/caddy-admin.sock
 RUN apt-get update && apt-get install -y libssl-dev
 
 COPY resource /resource
-COPY --from=builder /usr/src/ncp-activation/dist /dist
-CMD ["/dist/ncp-activation"]
+COPY --from=builder /usr/src/nextcloud-atomic/dist /dist
+CMD ["/dist/nextcloud-atomic"]

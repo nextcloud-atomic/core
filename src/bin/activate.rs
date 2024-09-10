@@ -210,7 +210,7 @@ pub fn app() -> Element {
     match nextcloud_reachable.take() {
         false => rsx! {
             div {
-                "Set the NCP master password:",
+                "Set the Nextcloud Atomic admin password:",
             },
             input {
                 name: "userpass",
@@ -227,7 +227,7 @@ pub fn app() -> Element {
                         } else {
                             nc_status_check.send(true);
                             //terminate().await.expect("Failed to stop server");
-                            status.set("NCP activated successfully! - Waiting for services to start".to_string());
+                            status.set("Nextcloud Atomic activated successfully! - Waiting for services to start".to_string());
                             activated.set(true)
                         }
                     }
