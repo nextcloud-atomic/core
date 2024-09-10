@@ -259,6 +259,7 @@ pub fn app() -> Element {
 }
 
 
+#[cfg(feature = "ssr")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,7 +280,7 @@ mod tests {
         tera_ctx.insert("NC_AIO_SECRETS", &aio_cfg.get_crypto_value(&crypto)
             .expect("Failed to retrieve secrets"));
 
-        let mut f = File::open(PathBuf::from("../../resource/templates/nextcloud-aio/defaults.env.j2"))
+        let mut f = File::open(env::current_dir().unwrap().join("resource/templates/nextcloud-aio/defaults.env.j2"))
             .expect("failed to open defaults.env.j2");
         let mut templ = String::new();
         f.read_to_string(&mut templ).expect("failed to read defaults.env.j2");
@@ -287,7 +288,7 @@ mod tests {
             .expect("failed to render defaults.env.j2");
         println!("{result}");
 
-        let mut f = File::open(PathBuf::from("../../resource/templates/nextcloud-aio/compose.yaml.j2"))
+        let mut f = File::open(env::current_dir().unwrap().join("resource/templates/nextcloud-aio/compose.yaml.j2"))
             .expect("failed to open compose.yaml.j2");
         let mut templ = String::new();
         f.read_to_string(&mut templ).expect("failed to read compose.yaml.j2");
