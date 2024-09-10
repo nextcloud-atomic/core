@@ -60,6 +60,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.87"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10f00e1f6e58a40e807377c75c6a7f97bf9044fab57816f2414e6f5f4499d7b8"
+
+[[package]]
 name = "anymap"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -438,6 +444,20 @@ name = "bytes"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8318a53db07bb3f8dca91a600466bdb3f2eaadeedfdbcf02e1accbad9271ba50"
+
+[[package]]
+name = "caddy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "reqwest",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "camino"
@@ -2274,6 +2294,7 @@ dependencies = [
  "base32",
  "base64 0.22.1",
  "bollard",
+ "caddy",
  "dioxus",
  "dioxus-logger",
  "fermi",
@@ -2288,7 +2309,6 @@ dependencies = [
  "log",
  "rand",
  "regex",
- "reqwest",
  "ring",
  "sd-notify",
  "serde",

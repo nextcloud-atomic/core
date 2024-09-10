@@ -1,11 +1,11 @@
+use std::fmt::Debug;
 use std::process::{Command, ExitStatus};
 use http_body_util::{Empty, Full, BodyExt};
 use hyper::body::Bytes;
 use hyper::{Method, Request};
-use crate::error::NcpError;
 use hyper_util::rt::TokioIo;
-use log::Log;
 use tokio::net::UnixStream;
+use anyhow::{bail, Result};
 
 
 pub struct CaddyClient {
@@ -15,7 +15,7 @@ pub struct CaddyClient {
 
 impl CaddyClient {
 
-    pub fn new(socket_path: &str) -> Result<CaddyClient, NcpError> {
+    pub fn new(socket_path: &str) -> Result<CaddyClient> {
         Ok(CaddyClient{
             socket_path: socket_path.to_string(),
             // client: Client::new()
@@ -43,10 +43,9 @@ impl CaddyClient {
     //     Ok(result)
     // }
     // Reference implementation: https://github.com/tokio-rs/axum/blob/main/examples/unix-domain-socket/src/main.rs
-    pub async fn load_config(&self, caddy_config: String, config_path: Option<String>) -> Result<String, NcpError> {
+    pub async fn load_config(&self, caddy_config: String, config_path: Option<String>) -> Result<String> {
         let stream = TokioIo::new(UnixStream::connect(self.socket_path.as_str()).await?);
-        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await
-            .map_err(|e| e.to_string())?;
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await?;
         //conn.await.map_err(|e| e.to_string())?;
         tokio::task::spawn(async move {
             if let Err(err) = conn.await {
@@ -64,21 +63,20 @@ impl CaddyClient {
                 },
                 None => "".to_string()
             }.as_str())
-            .body(Full::from(caddy_config)).map_err(|e| e.to_string())?;
+            .body(Full::from(caddy_config))?;
         println!("request: {:?}", request);
-        let response = sender.send_request(request).await.map_err(|e| e.to_string())?;
+        let response = sender.send_request(request).await?;
         let status = response.status();
-        let body = response.collect().await.map_err(|e| e.to_string())?.to_bytes();
+        let body = response.collect().await?.to_bytes();
         if !status.is_success() {
-            return Err(NcpError::from(format!("Failed to load caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body))));
+            bail!("Failed to load caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
-        Ok(String::from_utf8(body.to_vec()).map_err(|e| e.to_string())?)
+        Ok(String::from_utf8(body.to_vec())?)
     }
 
-    pub async fn change_config(&self, method: Method, payload: Option<String>, config_path: String) -> Result<String, NcpError> {
+    pub async fn change_config(&self, method: Method, payload: Option<String>, config_path: String) -> Result<String> {
         let stream = TokioIo::new(UnixStream::connect(self.socket_path.as_str()).await?);
-        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await
-            .map_err(|e| e.to_string())?;
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await?;
         //conn.await.map_err(|e| e.to_string())?;
         tokio::task::spawn(async move {
             if let Err(err) = conn.await {
@@ -97,22 +95,20 @@ impl CaddyClient {
                 true => config_path.to_string(),
                 false => "/".to_string() + config_path.as_str()
             }.as_str())
-            .body(request_body)
-            .map_err(|e| e.to_string())?;
+            .body(request_body)?;
         println!("request: {:?}", request);
-        let response = sender.send_request(request).await.map_err(|e| e.to_string())?;
+        let response = sender.send_request(request).await?;
         println!("response: {response:?}");
         let status = response.status();
-        let body = response.collect().await.map_err(|e| e.to_string())?.to_bytes();
+        let body = response.collect().await?.to_bytes();
         if !status.is_success() {
-            return Err(NcpError::from(format!("Failed to write caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body))));
+            return bail!("Failed to write caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
-        Ok(String::from_utf8(body.to_vec()).map_err(|e| e.to_string())?)
+        Ok(String::from_utf8(body.to_vec())?)
     }
-    pub async fn get_config(&self, config_path: Option<String>) -> Result<String, NcpError> {
+    pub async fn get_config(&self, config_path: Option<String>) -> Result<String> {
         let stream = TokioIo::new(UnixStream::connect(self.socket_path.as_str()).await?);
-        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await
-            .map_err(|e| e.to_string())?;
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await?;
         //conn.await.map_err(|e| e.to_string())?;
         tokio::task::spawn(async move {
             if let Err(err) = conn.await {
@@ -123,22 +119,21 @@ impl CaddyClient {
             .method(Method::GET)
             .header("Host", "127.0.0.1")
             .uri("http://localhost/config/".to_owned() + config_path.unwrap_or("".into()).as_str())
-            .body(Empty::new())
-            .map_err(|e| e.to_string())?;
-        let response = sender.send_request(request).await.map_err(|e| format!("{:?}", e))?;
+            .body(Empty::new())?;
+        let response = sender.send_request(request).await?;
         let status = response.status();
-        let body = response.collect().await.map_err(|e| e.to_string())?.to_bytes().clone();
+        let body = response.collect().await?.to_bytes().clone();
         if !status.is_success() {
-            return Err(NcpError::from(format!("Failed to retrieve caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body))));
+            bail!("Failed to retrieve caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
-        Ok(String::from_utf8(body.to_vec()).map_err(|e| e.to_string())?)
+        Ok(String::from_utf8(body.to_vec())?)
     }
 
-    pub async fn set_caddy_servers(&self, servers_cfg: String) -> Result<String, NcpError>{
+    pub async fn set_caddy_servers(&self, servers_cfg: String) -> Result<String>{
         self.change_config(Method::POST, Some(servers_cfg), "/config/apps/http/servers".to_string()).await
     }
 
-    pub async fn set_server_static_response(&self, server_name: String, html_body: String) -> Result<String, NcpError>{
+    pub async fn set_server_static_response(&self, server_name: String, html_body: String) -> Result<String>{
         let payload = format!(r#"[
             {{
                 "handle": [
@@ -152,7 +147,7 @@ impl CaddyClient {
         self.set_server_route(server_name, payload).await
     }
 
-    pub async fn set_server_route(&self, server_name: String, route_config: String) -> Result<String, NcpError> {
+    pub async fn set_server_route(&self, server_name: String, route_config: String) -> Result<String> {
         self.change_config(Method::DELETE, None, "/apps/http/servers/test/routes".to_string()).await?;
         #[cfg(test)]
         fix_admin_socket_permissions().expect("Failed to fix socket permissions");

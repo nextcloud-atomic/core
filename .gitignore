@@ -1,4 +1,5 @@
 /target
+/packages/*/target
 .idea
 dist
 out
