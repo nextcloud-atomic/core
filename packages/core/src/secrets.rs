@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use serde::{Deserialize, Serialize};
 use crate::crypto;
 use crate::crypto::{Crypto, CryptoValueProvider};
-use crate::error::NcpError;
+use anyhow::Result;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct DerivedSecret {
@@ -19,13 +19,13 @@ impl DerivedSecret {
         &self.key
     }
 
-    pub fn kv(&self, crypto: &Crypto) -> Result<(String, String), NcpError> {
+    pub fn kv(&self, crypto: &Crypto) -> Result<(String, String)> {
         Ok((self.get_key().to_string(), self.get_crypto_value(crypto)?))
     }
 }
 
 impl CryptoValueProvider<String> for DerivedSecret {
-    fn get_crypto_value(&self, crypto: &Crypto) -> Result<String, NcpError> {
+    fn get_crypto_value(&self, crypto: &Crypto) -> Result<String> {
         Ok(crypto::encode(&crypto.derive_secret(&self.key)?))
     }
 }

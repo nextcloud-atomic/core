@@ -19,9 +19,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{window, Window};
 use web_sys::js_sys::JsString;
 #[cfg(feature = "ssr")]
-use ncp_core::config::{NcAioConfig, NcpConfig};
+use core::config::{NcAioConfig, NcpConfig};
 #[cfg(feature = "ssr")]
-use ncp_core::crypto::{Crypto, CryptoValueProvider};
+use core::crypto::{Crypto, CryptoValueProvider};
 use regex::Regex;
 use futures_util::StreamExt;
 
@@ -30,7 +30,6 @@ use {
     std::time::Duration,
     std::process::exit,
     ncp_core::templating::render_template,
-    ncp_core::error::NcpError,
     sd_notify::notify,
     sd_notify::NotifyState,
     bollard::Docker,
@@ -62,16 +61,16 @@ fn main() {
     // tokio::signal::unix::signal(signal::unix::SignalKind::terminate()).expect("Failed to init signal handler").recv().await
 }
 
-fn print_err<E: std::error::Error>(e: E) -> E {
-    eprintln!("{:?}", e);
-    e
+fn print_err<E: ToString>(e: E) -> ServerFnError {
+    eprintln!("{}", e.to_string());
+    ServerFnError::new(e)
 }
 
 #[cfg(feature = "ssr")]
 fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathBuf, aio_render_path: PathBuf) -> Result<(), ServerFnError> {
     let mut tera_ctx = Context::new();
     tera_ctx.insert("NC_AIO_CONFIG", &cfg);
-    tera_ctx.insert("NC_AIO_SECRETS", &cfg.get_crypto_value(crypto)?);
+    tera_ctx.insert("NC_AIO_SECRETS", &cfg.get_crypto_value(crypto).map_err(|e| ServerFnError::new(e.to_string()))?);
     render_template(tera_ctx.clone(),
                     aio_template_path.join("defaults.env.j2"),
                     aio_render_path.join(".env"))
@@ -85,14 +84,14 @@ fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathB
 
 #[server]
 async fn activate_ncp(user_pass: String) -> Result<(), ServerFnError> {
-    let crypto = Crypto::new(ncp_core::NCP_VERSION, &user_pass)?;
-    let config = NcpConfig::new(ncp_core::NCP_VERSION, &crypto)?;
+let crypto = Crypto::new(ncp_core::NCP_VERSION, &user_pass).map_err(ServerFnError::new)?;
+    let config = NcpConfig::new(ncp_core::NCP_VERSION, &crypto).map_err(ServerFnError::new)?;
 
     let config_template_base_path = PathBuf::from(env::var("NCP_CONFIG_SOURCE")
         .map_err(print_err)?);
     let config_render_base_path = PathBuf::from(env::var("NCP_CONFIG_TARGET")
         .map_err(print_err)?);
-    config.save(config_render_base_path.join("ncp.json.j2"))?;
+    config.save(config_render_base_path.join("ncp.json.j2")).map_err(ServerFnError::new)?;
     render_aio_config(config.nc_aio,
                       &crypto,
                       config_template_base_path.join("nextcloud-aio"),
@@ -267,8 +266,8 @@ mod tests {
     use std::io::Read;
     use std::path::PathBuf;
     use tera::{Context, Tera};
-    use ncp_core::config::NcAioConfig;
-    use ncp_core::crypto::{Crypto, CryptoValueProvider};
+    use core::config::NcAioConfig;
+    use core::crypto::{Crypto, CryptoValueProvider};
 
     #[test]
     fn render_aio_templates() {

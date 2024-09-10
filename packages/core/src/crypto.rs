@@ -10,7 +10,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeStruct;
 use crate::config::{KeyDerivationSecrets, NcpConfig};
-use crate::error::NcpError;
+use anyhow::{anyhow, bail, Result};
 
 const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {padding: true};
 const INFO: [u8; 10] = hex!("f0f1f2f3f4f5f6f7f8f9");
@@ -19,9 +19,9 @@ static KEK_CIPHER: &aead::Algorithm = &AES_256_GCM;
 pub fn encode(data: &[u8]) -> String {
     base32::encode(B32_ENCODING_ALPHABET, data)
 }
-pub fn decode(data: &str) -> Result<Vec<u8>, NcpError> {
+pub fn decode(data: &str) -> Result<Vec<u8>> {
     base32::decode(B32_ENCODING_ALPHABET, data)
-        .ok_or(NcpError::from("Failed to decode string"))
+        .ok_or(anyhow::Error::msg("Failed to decode string"))
 }
 
 #[derive(Clone, Deserialize)]
@@ -35,13 +35,13 @@ pub struct Crypto {
 }
 impl Crypto {
 
-    pub fn new(ncp_version: &str, pass: &str) -> Result<Self, NcpError> {
+    pub fn new(ncp_version: &str, pass: &str) -> Result<Self> {
         let kek_salt = Self::generate_salt()?;
 
         let mut kdk = vec![0u8; SHA512_OUTPUT_LEN];
 
         let rng = SystemRandom::new();
-        rng.fill(&mut kdk).map_err(|e| format!("{e}"))?;
+        rng.fill(&mut kdk)?;
         let nonce_bytes = Self::generate_nonce()?;
 
         let mut crypto = Self::load_unsafe(&encode(&kek_salt), &encode(&kdk), &encode(&nonce_bytes), ncp_version, false)?;
@@ -51,14 +51,14 @@ impl Crypto {
         Ok(crypto)
     }
 
-    fn generate_nonce() -> Result<[u8; 12], NcpError> {
+    fn generate_nonce() -> Result<[u8; 12]> {
         let mut nonce_bytes = vec![0u8; NONCE_LEN];
         let rng = SystemRandom::new();
-        rng.fill(&mut nonce_bytes).map_err(|_| "failed to generate random nonce")?;
-        Ok(nonce_bytes.try_into().map_err(|_| "failed to convert nonce")?)
+        rng.fill(&mut nonce_bytes).map_err(|_| anyhow!("failed to generate random nonce"))?;
+        Ok(nonce_bytes.try_into().map_err(|_| anyhow!("failed to convert nonce"))?)
     }
 
-    fn load_unsafe(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str, locked: bool) -> Result<Self, NcpError> {
+    fn load_unsafe(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str, locked: bool) -> Result<Self> {
         let kek_salt = decode(kek_salt_str)?;
         let kdk_data = decode(kdk_data_str)?;
         let kdk_nonce_bytes = decode(kdk_nonce_str)?;
@@ -67,58 +67,56 @@ impl Crypto {
             ncp_version: ncp_version.to_string(),
             locked,
             kek: None,
-            kek_salt: kek_salt.try_into().map_err(|_| "Failed to convert salt")?,
+            kek_salt: kek_salt.try_into().map_err(|_| anyhow!("Failed to convert salt"))?,
             kdk: kdk_data,
-            kdk_nonce: kdk_nonce_bytes.try_into().map_err(|_| "Failed to convert nonce")?,
+            kdk_nonce: kdk_nonce_bytes.try_into().map_err(|_| anyhow!("Failed to convert nonce"))?,
         })
     }
 
-    pub fn load(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str) -> Result<Self, NcpError> {
+    pub fn load(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str) -> Result<Self> {
         Self::load_unsafe(kek_salt_str, kdk_data_str, kdk_nonce_str, ncp_version, true)
     }
 
     pub fn is_locked(&self) -> bool {
         return self.locked;
     }
-    pub fn unlock(&mut self, pass: &str) -> Result<(), NcpError> {
+    pub fn unlock(&mut self, pass: &str) -> Result<()> {
         let kek_secret = Self::create_key_from_pass(self.kek_salt, pass, KEK_CIPHER.key_len());
         let kek = LessSafeKey::new(UnboundKey::new(&KEK_CIPHER, &kek_secret)
-            .map_err(|e| format!("failed to init kek: {e}"))?);
+            .map_err(|e| anyhow!("failed to init kek: {e}"))?);
 
         let nonce = Nonce::try_assume_unique_for_key(&self.kdk_nonce)
-            .map_err(|e| format!("failed to init nonce: {e}"))?;
+            .map_err(|e| anyhow!("failed to init nonce: {e}"))?;
         let mut in_out = self.kdk.clone();
         let decrypted = kek.open_in_place(nonce,
-                          Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
-                          &mut in_out).map_err(|e| format!("failed to open kdk: {e}"))?;
+                                          Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
+                                          &mut in_out).map_err(|e| anyhow!("failed to open kdk: {e}"))?;
         self.kdk = decrypted.into();
 
-        self.kek = Some(kek_secret.try_into().map_err(|e| format!("failed to store kek_secret: {e}"))?);
+        self.kek = Some(kek_secret.try_into().map_err(|e| anyhow!("failed to store kek_secret: {e}"))?);
         self.kdk_nonce = Self::generate_nonce()?;
         self.locked = false;
         Ok(())
     }
 
-    pub fn lock(&mut self) -> Result<(), NcpError> {
-        let kek_bytes = self.kek.clone().ok_or("key encryption key is not set")?;
+    pub fn lock(&mut self) -> Result<()> {
+        let kek_bytes = self.kek.clone().ok_or(anyhow!("key encryption key is not set"))?;
         self.lock_unsafe(kek_bytes)
     }
-    fn lock_unsafe(&mut self, kek_bytes: Vec<u8>) -> Result<(), NcpError> {
-        let kek = LessSafeKey::new(UnboundKey::new(&KEK_CIPHER, &*kek_bytes)
-            .map_err(|e| format!("{e}"))?);
+    fn lock_unsafe(&mut self, kek_bytes: Vec<u8>) -> Result<()> {
+        let kek = LessSafeKey::new(UnboundKey::new(&KEK_CIPHER, &*kek_bytes)?);
 
         let mut nonce_bytes = vec![0u8; NONCE_LEN];
         let rng = SystemRandom::new();
-        rng.fill(&mut nonce_bytes).map_err(|e| format!("{e}"))?;
-        let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)
-            .map_err(|e| format!("{e}"))?;
+        rng.fill(&mut nonce_bytes)?;
+        let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)?;
 
         kek.seal_in_place_append_tag(nonce,
-                                          Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
-                                          &mut self.kdk).map_err(|e| format!("Failed to encrypt: {e}"))?;
+                                     Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
+                                     &mut self.kdk).map_err(|e| anyhow!("Failed to encrypt: {e}"))?;
         self.locked = true;
         self.kdk_nonce = nonce_bytes.try_into()
-            .map_err(|_| NcpError::from("Failed to parse nonce"))?;
+            .map_err(|_| anyhow!("Failed to parse nonce"))?;
         self.kek = None;
         Ok(())
     }
@@ -129,18 +127,18 @@ impl Crypto {
         derived
     }
 
-    fn generate_salt() -> Result<[u8; 16], NcpError> {
+    fn generate_salt() -> Result<[u8; 16]> {
         let rng = ring::rand::SystemRandom::new();
         let mut buf = [0; 16];
         match rng.fill(&mut buf) {
-            Err(_) => Err("Failed to fill buffer for salt".into()),
+            Err(_) => bail!("Failed to fill buffer for salt"),
             Ok(_) => Ok(buf)
         }
     }
 
-    pub fn derive_secret(&self, secret_key: &str) -> Result<Vec<u8>, NcpError> {
+    pub fn derive_secret(&self, secret_key: &str) -> Result<Vec<u8>> {
         if self.locked {
-            return Err(NcpError::from("crypto is not unlocked"))
+            bail!("crypto is not unlocked")
         }
         let sha256 = digest(&digest::SHA256, secret_key.as_bytes());
         let hdkf_salt = hkdf::Salt::new(HKDF_SHA256, sha256.as_ref());
@@ -149,14 +147,14 @@ impl Crypto {
                 let HkdfMy(okm) = my_okm.into();
                 Ok(okm)
             }
-            Err(_) => Err("Failed to derive okm".into())
+            Err(_) => bail!("Failed to derive okm")
         }
     }
 
 }
 
 impl TryInto<KeyDerivationSecrets> for &Crypto {
-    type Error = NcpError;
+    type Error = anyhow::Error;
 
     fn try_into(self) -> Result<KeyDerivationSecrets, Self::Error> {
         let locked_crypto = match self.locked {
@@ -177,7 +175,7 @@ impl TryInto<KeyDerivationSecrets> for &Crypto {
 }
 
 impl TryFrom<KeyDerivationSecrets> for Crypto {
-    type Error = NcpError;
+    type Error = anyhow::Error;
     fn try_from(config: KeyDerivationSecrets) -> Result<Self, Self::Error> {
         Crypto::load(config.key_encryption_key_salt.as_str(),
                      config.key_derivation_key.as_str(),
@@ -220,7 +218,7 @@ impl Debug for Crypto {
 impl From<NcpConfig> for Crypto {
     fn from(cfg: NcpConfig) -> Self {
         Self::load(cfg.kdk.key_encryption_key_salt.as_str(), cfg.kdk.key_derivation_key.as_str(),
-        cfg.kdk.key_derivation_key_nonce.as_str(), cfg.ncp_version.as_str())
+                   cfg.kdk.key_derivation_key_nonce.as_str(), cfg.ncp_version.as_str())
             .expect("Failed to load crypto from configuration")
 
     }
@@ -249,7 +247,7 @@ pub trait CryptoUser<'a> {
 }
 
 pub trait CryptoValueProvider<T> {
-    fn get_crypto_value(&self, crypto: &Crypto) -> Result<T, NcpError>;
+    fn get_crypto_value(&self, crypto: &Crypto) -> Result<T>;
 }
 
 

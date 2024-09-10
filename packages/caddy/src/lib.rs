@@ -29,7 +29,7 @@ impl CaddyClient {
     //     let mut response = self.client.request(req).await?;
     //     if !response.status().is_success() {
     //         return Err(NcpError::from(format!(
-    //             "Failed to load caddy config (received status: {})",
+    //             "Failed to load caddy core (received status: {})",
     //             response.status().as_str())))
     //     }
     //     let mut buf = BufWriter::new(Vec::new());
@@ -69,7 +69,7 @@ impl CaddyClient {
         let status = response.status();
         let body = response.collect().await?.to_bytes();
         if !status.is_success() {
-            bail!("Failed to load caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
+            bail!("Failed to load caddy core (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
         Ok(String::from_utf8(body.to_vec())?)
     }
@@ -102,7 +102,7 @@ impl CaddyClient {
         let status = response.status();
         let body = response.collect().await?.to_bytes();
         if !status.is_success() {
-            return bail!("Failed to write caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
+            return bail!("Failed to write caddy core (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
         Ok(String::from_utf8(body.to_vec())?)
     }
@@ -124,13 +124,13 @@ impl CaddyClient {
         let status = response.status();
         let body = response.collect().await?.to_bytes().clone();
         if !status.is_success() {
-            bail!("Failed to retrieve caddy config (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
+            bail!("Failed to retrieve caddy core (status {}): {}", status.to_string(), String::from_utf8_lossy(&body));
         }
         Ok(String::from_utf8(body.to_vec())?)
     }
 
     pub async fn set_caddy_servers(&self, servers_cfg: String) -> Result<String>{
-        self.change_config(Method::POST, Some(servers_cfg), "/config/apps/http/servers".to_string()).await
+        self.change_config(Method::POST, Some(servers_cfg), "/core/apps/http/servers".to_string()).await
     }
 
     pub async fn set_server_static_response(&self, server_name: String, html_body: String) -> Result<String>{
@@ -169,13 +169,12 @@ fn fix_admin_socket_permissions() -> Result<(), ExitStatus>{
 
 
 #[cfg(test)]
-#[cfg(feature = "ssr")]
 mod tests {
     use std::env;
     use std::fs::File;
     use std::io::Read;
     use hyper::Method;
-    use crate::caddy::CaddyClient;
+    use crate::CaddyClient;
     use super::fix_admin_socket_permissions;
 
     #[tokio::test]
@@ -191,7 +190,7 @@ mod tests {
         {
             let result = caddy.get_config(None).await;
             assert!(result.is_ok(), "Failed to retrieve caddy config: {:?}", result.expect_err("unknown err"));
-            println!("config: {}", result.unwrap())
+            println!("core: {}", result.unwrap())
         }
         {
             // let result = caddy.write_config("site2".to_string(), "apps/srv0/servers/http/".to_string()).await;
@@ -203,7 +202,7 @@ mod tests {
         {
             let result = caddy.get_config(None).await;
             assert!(result.is_ok(), "Failed to retrieve caddy config: {:?}", result.expect_err("unknown err"));
-            println!("config: {}", result.unwrap())
+            println!("core: {}", result.unwrap())
         }
     }
 
@@ -227,7 +226,7 @@ mod tests {
         {
             let result = caddy.get_config(None).await;
             assert!(result.is_ok(), "Failed to retrieve caddy config: {:?}", result.expect_err("unknown err"));
-            println!("config: {}", result.unwrap())
+            println!("core: {}", result.unwrap())
         }
         let static_html = "hello world";
         {
@@ -238,7 +237,7 @@ mod tests {
         {
             let result = caddy.get_config(None).await;
             assert!(result.is_ok(), "Failed to retrieve caddy config: {:?}", result.expect_err("unknown err"));
-            println!("config: {}", result.unwrap())
+            println!("core: {}", result.unwrap())
         }
         let http_result = reqwest::get("http://localhost").await;
         assert!(http_result.is_ok(), "Failed to retrieve page from caddy: {}", http_result.unwrap_err());

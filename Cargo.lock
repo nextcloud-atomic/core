@@ -18,6 +18,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
+name = "aead"
+version = "0.6.0-rc.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5f451b77e2f92932dc411da6ef9f3d33efad68a6f14a7a83e559453458e85ac"
+dependencies = [
+ "crypto-common 0.2.0-rc.1",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -361,6 +370,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-buffer"
+version = "0.11.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8969801e57d15e15bc4d7cdc5600dc15ca06a9a62b622bd4871c2d21d8aeb42d"
+dependencies = [
+ "crypto-common 0.2.0-rc.1",
+]
+
+[[package]]
 name = "blocking"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -634,6 +652,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "aead",
+ "anyhow",
+ "base32",
+ "digest 0.11.0-pre.9",
+ "hex",
+ "hex-literal",
+ "hkdf",
+ "pbkdf2",
+ "ring",
+ "serde",
+ "serde-inline-default",
+ "serde_json",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -697,6 +733,16 @@ checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "crypto-common"
+version = "0.2.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0b8ce8218c97789f16356e7896b3714f26c2ee1079b79c0b7ae7064bb9089fa"
+dependencies = [
+ "hybrid-array",
+ "rand_core",
 ]
 
 [[package]]
@@ -774,8 +820,19 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
- "block-buffer",
- "crypto-common",
+ "block-buffer 0.10.4",
+ "crypto-common 0.1.6",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.0-pre.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf2e3d6615d99707295a9673e889bf363a04b2a466bd320c65a72536f7577379"
+dependencies = [
+ "block-buffer 0.11.0-rc.1",
+ "crypto-common 0.2.0-rc.1",
+ "subtle",
 ]
 
 [[package]]
@@ -1767,6 +1824,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
+name = "hkdf"
+version = "0.13.0-pre.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00176ff81091018d42ff82e8324f8e5adb0b7e0468d1358f653972562dbff031"
+dependencies = [
+ "hmac",
+]
+
+[[package]]
+name = "hmac"
+version = "0.13.0-pre.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4b1fb14e4df79f9406b434b60acef9f45c26c50062cccf1346c6103b8c47d58"
+dependencies = [
+ "digest 0.11.0-pre.9",
+]
+
+[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1836,6 +1911,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cb51c9a029ddc91b07a787f1d86b53ccfa49b0e86688c946ebe8d3555685dd7"
 dependencies = [
  "libm",
+]
+
+[[package]]
+name = "hybrid-array"
+version = "0.2.0-rc.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d306b679262030ad8813a82d4915fc04efff97776e4db7f8eb5137039d56400"
+dependencies = [
+ "typenum",
 ]
 
 [[package]]
@@ -2290,17 +2374,17 @@ dependencies = [
 name = "ncp-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-std",
- "base32",
  "base64 0.22.1",
  "bollard",
  "caddy",
+ "core",
  "dioxus",
  "dioxus-logger",
  "fermi",
  "futures-util",
  "hex",
- "hex-literal",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -2312,8 +2396,6 @@ dependencies = [
  "ring",
  "sd-notify",
  "serde",
- "serde-inline-default",
- "serde_json",
  "strum",
  "strum_macros",
  "tera",
@@ -2457,6 +2539,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f2a05b18d44e2957b88f96ba460715e295bc1d7510468a2f3d3b44535d26c24"
 dependencies = [
  "regex",
+]
+
+[[package]]
+name = "pbkdf2"
+version = "0.13.0-pre.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85e11753d5193f26dc27ae698e0b536b5e511b7799c5ac475ec10783f26d164a"
+dependencies = [
+ "digest 0.11.0-pre.9",
+ "hmac",
 ]
 
 [[package]]
@@ -3148,7 +3240,7 @@ checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if",
  "cpufeatures",
- "digest",
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -3159,7 +3251,7 @@ checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
 dependencies = [
  "cfg-if",
  "cpufeatures",
- "digest",
+ "digest 0.10.7",
 ]
 
 [[package]]

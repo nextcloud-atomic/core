@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["packages/caddy"]
+members = ["packages/caddy", "packages/core"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,28 +20,24 @@ hyper = { version = "1.2.0", features = ["client", "full"]}
 tokio = { version = "1.36.0", features = ["rt", "rt-multi-thread", "macros"]}
 http-body-util = { version = "0.1.0" }
 anyhow = "1.0.87"
+serde_json = "1.0.113"
+caddy = {path = 'packages/caddy'}
+core = {path = 'packages/core' }
+serde-inline-default = "0.2.0"
 
 [workspace.package]
 version = "0.1.0"
 
 [dependencies]
 
-#bcrypt = { version = "0.15.0", features = ["default", "js"] }
-hex-literal = "0.4.1"
-#hkdf = "0.12"
-#sha2 = "0.10.8"
 rand = "0.8.5"
 dioxus = { version = "*", features = ["fullstack"] }
 tera = "1.19.1"
 strum = "0.26.1"
 strum_macros = "0.26.1"
-#crypto = { version = "0.5.1", features = ["digest", "password-hash", "cipher", "universal-hash"] }
 ring = { version = "0.17.7", features = ["default", "wasm32_unknown_unknown_js", "std"] }
 base64 = "0.22.1"
 hex = "0.4.3"
-base32 = "0.5.1"
-serde_json = "1.0.113"
-serde-inline-default = "0.2.0"
 fermi = "0.4.3"
 async-std = { version = "1.12.0", features = [] }
 instant = "0.1.12"
@@ -55,10 +51,13 @@ futures-util = "0.3.30"
 hyper = {workspace = true, optional = true}
 hyperlocal = {workspace = true, optional = true}
 hyper-util = {workspace = true, optional = true}
-caddy = {path = 'packages/caddy', optional = true}
 serde = {workspace = true}
 log = {workspace = true}
 regex = {workspace = true}
+anyhow = {workspace = true}
+
+caddy = {workspace = true, optional = true}
+core = {workspace = true, optional = true}
 
 [dependencies.web-sys]
 version = "0.3.70"
@@ -78,7 +77,7 @@ path = "src/bin/ncp-activation.rs"
 
 [features]
 default = []
-ssr = ["dioxus/axum", "tokio", "bollard", "sd-notify", "hyperlocal", "hyper-util", "hyper", "http-body-util", "caddy"]
+ssr = ["dioxus/axum", "tokio", "bollard", "sd-notify", "hyperlocal", "hyper-util", "hyper", "http-body-util", "caddy", "core"]
 web = ["dioxus/web"]
 
 [target.x86_64-unknown-linux-gnu]

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_inline_default::serde_inline_default;
 use crate::crypto::{Crypto, CryptoValueProvider};
 use crate::secrets::{DerivedSecret};
-use crate::error::NcpError;
+use anyhow::{anyhow, Result};
 
 
 #[serde_inline_default]
@@ -51,7 +51,7 @@ pub struct NcAioConfig {
 impl NcAioConfig {
     pub fn create() -> Self {
         let cfg: NcAioConfig = serde_json::from_str("{}")
-            .expect("Failed to create ncp config");
+            .expect("Failed to create ncp core");
         cfg
     }
 
@@ -64,7 +64,7 @@ impl Default for NcAioConfig {
 }
 
 impl CryptoValueProvider<HashMap<String, String>> for NcAioConfig {
-    fn get_crypto_value(&self, crypto: &Crypto) -> Result<HashMap<String, String>, NcpError> {
+    fn get_crypto_value(&self, crypto: &Crypto) -> Result<HashMap<String, String>> {
         Ok(HashMap::from([
             self.db_password.kv(crypto)?,
             self.fulltextsearch_pw.kv(crypto)?,
@@ -95,18 +95,18 @@ pub struct NcpConfig {
 }
 
 impl NcpConfig {
-    pub fn new(ncp_version: &str, crypto: &Crypto) -> Result<Self, NcpError> {
+    pub fn new(ncp_version: &str, crypto: &Crypto) -> Result<Self> {
         Ok(Self {
             kdk: crypto.try_into()
-                .map_err(|e| format!("Failed to retrieve crypto config: {}", e))?,
+                .map_err(|e| anyhow!("Failed to retrieve crypto core: {}", e))?,
             nc_aio: NcAioConfig::create(),
             ncp_version: ncp_version.into()
         })
     }
 
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), NcpError> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         serde_json::to_writer(&File::create(path)?, self)
-            .map_err(|e| format!("Failed to save configuration: {}", e))?;
+            .map_err(|e| anyhow!("Failed to save configuration: {}", e))?;
         Ok(())
     }
 }
