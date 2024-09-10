@@ -1,15 +1,15 @@
 #![allow(non_snake_case)]
 
 use dioxus::prelude::*;
-use dioxus_fullstack::launch::LaunchBuilder;
-use dioxus_fullstack::prelude::{server, ServerFnError};
+// use dioxus::fullstack::launch::LaunchBuilder;
+use dioxus::fullstack::prelude::{server, ServerFnError};
+use dioxus::prelude::*;
 use std::env;
 use std::fmt::Display;
 use std::fs::File;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::rc::Rc;
-use async_std::prelude::StreamExt;
 use async_std::task::sleep;
 use log::{info, LevelFilter};
 use serde::{Deserialize, Serialize, Serializer};
@@ -18,9 +18,12 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{window, Window};
 use web_sys::js_sys::JsString;
+#[cfg(feature = "ssr")]
 use ncp_core::config::{NcAioConfig, NcpConfig};
+#[cfg(feature = "ssr")]
 use ncp_core::crypto::{Crypto, CryptoValueProvider};
 use regex::Regex;
+use futures_util::StreamExt;
 
 #[cfg(feature = "ssr")]
 use {
@@ -40,10 +43,10 @@ use {
 };
 
 
-#[cfg(feature = "ssr")]
-fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
-    launcher.addr(SocketAddr::new(IpAddr::from([0, 0, 0, 0]), 8080))
-}
+// #[cfg(feature = "ssr")]
+// fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
+//     launcher.addr(SocketAddr::new(IpAddr::from([0, 0, 0, 0]), 8080))
+// }
 
 #[cfg(not(feature = "ssr"))]
 fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
@@ -51,10 +54,11 @@ fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
 }
 
 fn main() {
-    dioxus_logger::init(LevelFilter::Info).expect("failed to init logger");
-    let mut launcher = LaunchBuilder::new(app);
-    launcher = set_server_address(launcher);
-    launcher.launch();
+    // dioxus_logger::init(LevelFilter::Info).expect("failed to init logger");
+    // let mut launcher = LaunchBuilder::new(app);
+    // launcher = set_server_address(launcher);
+    // launcher.launch();
+    launch(app);
     // tokio::signal::unix::signal(signal::unix::SignalKind::terminate()).expect("Failed to init signal handler").recv().await
 }
 
@@ -178,14 +182,14 @@ pub fn get_location() -> Result<JsString, JsValue> {
     //Ok((loc.protocol()?, loc.host()?, loc.port()?, loc.pathname()?))
 }
 
-pub fn app(cx: Scope) -> Element {
-    let mut userpass = use_state(cx, || "".to_string());
-    let mut status = use_state(cx, || "".to_string());
-    let mut error_message: &UseState<Option<String>> = use_state(cx, || None);
-    let mut activated = use_state(cx, || false);
-    let mut nextcloud_reachable = use_state(cx, || false);
-    let mut containers_status: &UseState<Option<ContainerStatusResult>> = use_state(cx, || None);
-    let nc_status_check = use_coroutine(cx, |mut rx: UnboundedReceiver<bool>| {
+pub fn app() -> Element {
+    let mut userpass = use_signal(|| "".to_string());
+    let mut status = use_signal(|| "".to_string());
+    let mut error_message: Signal<Option<String>> = use_signal(|| None);
+    let mut activated = use_signal(|| false);
+    let mut nextcloud_reachable = use_signal(|| false);
+    let mut containers_status: Signal<Option<ContainerStatusResult>> = use_signal(|| None);
+    let nc_status_check = use_coroutine(|mut rx: UnboundedReceiver<bool>| {
         to_owned![containers_status, error_message];
         async move {
             rx.next().await;
@@ -204,7 +208,7 @@ pub fn app(cx: Scope) -> Element {
             }
         }
     });
-    cx.render(match nextcloud_reachable.get() {
+    match nextcloud_reachable.take() {
         false => rsx! {
             div {
                 "Set the NCP master password:",
@@ -212,14 +216,14 @@ pub fn app(cx: Scope) -> Element {
             input {
                 name: "userpass",
                 value: "{userpass}",
-                oninput: move |evt| userpass.set(evt.value.clone()),
+                oninput: move |evt| userpass.set(evt.value()),
             },
             button {
                 r#type: "button",
                 onclick: move |evt| {
                     to_owned![status, userpass, activated, nc_status_check];
                     async move {
-                        if let Err(e) = activate_ncp(userpass.current().to_string()).await {
+                        if let Err(e) = activate_ncp(userpass.take()).await {
                             status.set(e.to_string());
                         } else {
                             nc_status_check.send(true);
@@ -236,7 +240,7 @@ pub fn app(cx: Scope) -> Element {
                 "{status}",
             },
             pre {
-                match containers_status.current().as_ref() {
+                match containers_status.take() {
                     Some(val) => val.to_string(),
                     None => "".to_string()
                 }
@@ -252,7 +256,7 @@ pub fn app(cx: Scope) -> Element {
                 "Open Nextcloud"
             }
         }
-    })
+    }
 }
 
 

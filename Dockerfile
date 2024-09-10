@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y clang
 RUN rustup target add wasm32-unknown-unknown && cargo install dioxus-cli
 WORKDIR /usr/src/ncp-activation
 COPY . .
-RUN dx build --features web --release && dx build --features ssr --release --platform desktop
-#CMD ["trunk", "serve", "--address", "0.0.0.0", "--port", "${PORT}", "--features", "ssr", "--release", ""]
-#CMD ["cargo", "run", "--bin", "ncp-activation", "--features", "ssr"]
+RUN dx build --features web --release && dx build --features server --release --platform desktop
+#CMD ["trunk", "serve", "--address", "0.0.0.0", "--port", "${PORT}", "--features", "server", "--release", ""]
+#CMD ["cargo", "run", "--bin", "ncp-activation", "--features", "server"]
 
 FROM debian:latest
 

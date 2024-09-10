@@ -1,4 +1,6 @@
+#[cfg(feature = "ssr")]
 pub mod config;
+#[cfg(feature = "ssr")]
 pub mod crypto;
 pub mod error;
 #[cfg(feature = "ssr")]

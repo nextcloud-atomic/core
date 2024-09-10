@@ -12,7 +12,7 @@ use serde::ser::SerializeStruct;
 use crate::config::{KeyDerivationSecrets, NcpConfig};
 use crate::error::NcpError;
 
-const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::RFC4648 {padding: true};
+const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {padding: true};
 const INFO: [u8; 10] = hex!("f0f1f2f3f4f5f6f7f8f9");
 static KEK_CIPHER: &aead::Algorithm = &AES_256_GCM;
 

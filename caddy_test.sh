@@ -31,7 +31,7 @@ do
   docker exec caddy chmod g+rwx /run/caddy/admin.sock
   curl --unix-socket "$CADDY_ADMIN_SOCKET" http://127.0.0.1/config/ > /dev/null
   curl http://localhost | grep 'site1'
-  cargo test --package ncp-core --lib caddy::tests::"$testfn" --features ssr -- --exact
+  cargo test --package ncp-core --lib caddy::tests::"$testfn" --features server -- --exact
   docker stop caddy
   sleep 1
 done
