@@ -2371,7 +2371,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ncp-core"
+name = "nextcloud-atomic"
 version = "0.1.0"
 dependencies = [
  "anyhow",

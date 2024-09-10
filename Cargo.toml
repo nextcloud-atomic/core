@@ -1,5 +1,5 @@
 [package]
-name = "ncp-core"
+name = "nextcloud-atomic"
 version = "0.1.0"
 edition = "2021"
 
@@ -68,12 +68,12 @@ name = "ncp_core"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ncp-config"
-path = "src/bin/ncp-config.rs"
+name = "configure"
+path = "src/bin/configure.rs"
 
 [[bin]]
-name = "ncp-activation"
-path = "src/bin/ncp-activation.rs"
+name = "activate"
+path = "src/bin/activate.rs"
 
 [features]
 default = []
