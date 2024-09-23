@@ -1,24 +1,24 @@
-FROM rust:1.72 as builder
-
-#RUN apk add alpine-sdk openssl-dev musl-dev openssl
-#RUN apt-get install -y openssl-dev musl-dev
-RUN apt-get update && apt-get install -y clang
-#ENV OPENSSL_DIR=/usr
+FROM rust:1-alpine as builder
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_LIB_DIR=/usr/lib
+ENV OPENSSL_INCLUDE_DIR=/usr/include/openssl
+ENV OPENSSL_NO_VENDOR=y
+RUN apk update && apk add alpine-sdk coreutils gcc g++ openssl openssl-dev musl-dev clang openssl-libs-static
 RUN rustup target add wasm32-unknown-unknown && cargo install dioxus-cli
-WORKDIR /usr/src/nextcloud-atomic
+#RUN cargo update -p wasm-bindgen --precise 0.2.93
+WORKDIR /app
 COPY . .
-RUN dx build --features web --release && dx build --features server --release --platform desktop
-#CMD ["trunk", "serve", "--address", "0.0.0.0", "--port", "${PORT}", "--features", "server", "--release", ""]
-#CMD ["cargo", "run", "--bin", "nextcloud-atomic", "--features", "server"]
+RUN dx build --platform fullstack --release --target=x86_64-unknown-linux-musl
 
-FROM debian:latest
+FROM alpine:latest
 
 ENV NCP_CONFIG_SOURCE=/resource/templates
 ENV NCP_CONFIG_TARGET=/etc/ncp
-ENV CADDY_ADDRESS=unix:/run/caddy-admin.sock
+ENV CADDY_ADMIN_SOCKET=/run/caddy/caddy-admin.sock
+ENV DIOXUS_IP="0.0.0.0"
 
-RUN apt-get update && apt-get install -y libssl-dev
-
+COPY --from=builder /app/dist /dist
 COPY resource /resource
-COPY --from=builder /usr/src/nextcloud-atomic/dist /dist
-CMD ["/dist/nextcloud-atomic"]
+EXPOSE 8080
+WORKDIR /dist
+CMD ["/dist/activate"]
