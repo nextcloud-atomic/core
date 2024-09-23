@@ -7,26 +7,31 @@ use dioxus::prelude::*;
 use std::env;
 use std::fmt::Display;
 use std::fs::File;
-use std::net::{IpAddr, SocketAddr};
+use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::str::FromStr;
 use async_std::task::sleep;
+use dioxus::fullstack::Config;
 use log::{info, LevelFilter};
 use serde::{Deserialize, Serialize, Serializer};
 use tera::Context;
 use wasm_bindgen::JsValue;
-use wasm_bindgen::prelude::wasm_bindgen;
-use web_sys::{window, Window};
-use web_sys::js_sys::JsString;
-#[cfg(feature = "ssr")]
-use core::config::{NcAioConfig, NcpConfig};
-#[cfg(feature = "ssr")]
-use core::crypto::{Crypto, CryptoValueProvider};
 use regex::Regex;
 use futures_util::StreamExt;
 
-#[cfg(feature = "ssr")]
+#[cfg(feature = "web")]
 use {
+    wasm_bindgen::prelude::wasm_bindgen,
+    web_sys::{window, Window},
+    web_sys::js_sys::JsString,
+};
+
+#[cfg(feature = "server")]
+use {
+    core::config::{NcAioConfig, NcpConfig},
+    core::crypto::{Crypto, CryptoValueProvider},
     std::time::Duration,
     std::process::exit,
     ncp_core::templating::render_template,
@@ -34,31 +39,47 @@ use {
     sd_notify::NotifyState,
     bollard::Docker,
     bollard::models::ContainerSummary,
-    bollard::container::ListContainersOptions
+    bollard::container::ListContainersOptions,
+    caddy::CaddyClient,
+    hyper::Method
 };
-#[cfg(not(feature = "ssr"))]
+#[cfg(not(feature = "server"))]
 use {
    instant::Duration
 };
 
-
-// #[cfg(feature = "ssr")]
-// fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
-//     launcher.addr(SocketAddr::new(IpAddr::from([0, 0, 0, 0]), 8080))
-// }
-
-#[cfg(not(feature = "ssr"))]
+#[cfg(feature = "web")]
 fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
     launcher
 }
 
+#[cfg(feature = "server")]
 fn main() {
     // dioxus_logger::init(LevelFilter::Info).expect("failed to init logger");
     // let mut launcher = LaunchBuilder::new(app);
     // launcher = set_server_address(launcher);
     // launcher.launch();
-    launch(app);
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            caddy_enable_activation_page().await.expect("Failed to configure caddy");
+        });
+    let cfg = Config::default()
+        .addr(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
+            8080));
+    LaunchBuilder::new()
+        .with_cfg(cfg)
+        .launch(app)
     // tokio::signal::unix::signal(signal::unix::SignalKind::terminate()).expect("Failed to init signal handler").recv().await
+}
+
+#[cfg(not(feature = "server"))]
+fn main() {
+    launch(app)
 }
 
 fn print_err<E: ToString>(e: E) -> ServerFnError {
@@ -66,7 +87,7 @@ fn print_err<E: ToString>(e: E) -> ServerFnError {
     ServerFnError::new(e)
 }
 
-#[cfg(feature = "ssr")]
+#[cfg(feature = "server")]
 fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathBuf, aio_render_path: PathBuf) -> Result<(), ServerFnError> {
     let mut tera_ctx = Context::new();
     tera_ctx.insert("NC_AIO_CONFIG", &cfg);
@@ -96,14 +117,15 @@ let crypto = Crypto::new(ncp_core::NCP_VERSION, &user_pass).map_err(ServerFnErro
                       &crypto,
                       config_template_base_path.join("nextcloud-aio"),
                       config_render_base_path.join("nextcloud-aio"))?;
-    notify(true, &[NotifyState::Ready]);
+    notify(true, &[NotifyState::Ready]).
+        map_err(|e| ServerFnError::new("Could not complete activation: ".to_string() + &e.to_string()))?;
     Ok(())
     //    .expect("Failed to create master key from password");
 }
 
 #[server]
 async fn terminate() -> Result<(), ServerFnError> {
-    #[cfg(feature = "ssr")]
+    #[cfg(feature = "server")]
     {
         tokio::spawn(async {
             tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -168,16 +190,27 @@ async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
     })
 }
 
+#[cfg(feature = "server")]
+async fn caddy_enable_activation_page() -> anyhow::Result<()> {
+    let caddy_cli = CaddyClient::new(&env::var("CADDY_ADMIN_SOCKET")?)?;
+    let mut f = File::options().read(true).open("/resource/caddy/default_ncp_activation.json")?;
+    let mut cfg = String::new();
+    f.read_to_string(&mut cfg)?;
+    let _ = caddy_cli.set_caddy_servers(cfg).await?;
+    Ok(())
+}
+
 #[server]
 async fn caddy_enable_nextcloud() -> Result<(), ServerFnError>{
     Ok(())
 }
 
+#[cfg(feature = "web")]
 #[wasm_bindgen]
 pub fn get_location() -> Result<JsString, JsValue> {
     let window = web_sys::window().unwrap();
     let loc = window.location();
-    Ok(loc.to_string())
+    Ok(loc.to_string()) 
     //Ok((loc.protocol()?, loc.host()?, loc.port()?, loc.pathname()?))
 }
 
@@ -259,7 +292,7 @@ pub fn app() -> Element {
 }
 
 
-#[cfg(feature = "ssr")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use super::*;
