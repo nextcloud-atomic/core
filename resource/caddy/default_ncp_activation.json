@@ -7,17 +7,6 @@
           "host": ["localhost", "nextcloudpi.local"]
         }
       ],
-      "terminal": true,
-      "tls": {
-        "automation": {
-          "policies": [{
-            "issues":  [{
-              "module": "internal"
-            }],
-            "subjects": ["localhost", "nextcloudpi.local"]
-          }]
-        }
-      },
       "handle": [
         {
           "handler": "headers",
@@ -27,12 +16,15 @@
         },
         {
           "handler": "reverse_proxy",
-          "upstreams": [
-            {
-              "dial": "127.0.0.1:1080",
-              "max_requests": 0
-            }
-          ]
+          "dynamic_upstreams": {
+            "name": "ncp-activation",
+            "port": "8080",
+            "refresh": 5000000000,
+            "resolver": {
+              "addresses": ["127.0.0.11"]
+            },
+            "source": "a"
+          }
         }
       ]
     }]
