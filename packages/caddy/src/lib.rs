@@ -130,7 +130,7 @@ impl CaddyClient {
     }
 
     pub async fn set_caddy_servers(&self, servers_cfg: String) -> Result<String>{
-        self.change_config(Method::POST, Some(servers_cfg), "/core/apps/http/servers".to_string()).await
+        self.change_config(Method::POST, Some(servers_cfg), "/apps/http/servers".to_string()).await
     }
 
     pub async fn set_server_static_response(&self, server_name: String, html_body: String) -> Result<String>{
@@ -148,7 +148,7 @@ impl CaddyClient {
     }
 
     pub async fn set_server_route(&self, server_name: String, route_config: String) -> Result<String> {
-        self.change_config(Method::DELETE, None, "/apps/http/servers/test/routes".to_string()).await?;
+        self.change_config(Method::DELETE, None, format!("/apps/http/servers/{server_name}/routes")).await?;
         #[cfg(test)]
         fix_admin_socket_permissions().expect("Failed to fix socket permissions");
         self.change_config(Method::POST, Some(route_config), format!("/apps/http/servers/{server_name}/routes")).await
