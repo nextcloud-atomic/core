@@ -12,13 +12,13 @@ RUN dx build --platform fullstack --release --target=x86_64-unknown-linux-musl
 
 FROM alpine:latest
 
-ENV NCP_CONFIG_SOURCE=/resource/templates
-ENV NCP_CONFIG_TARGET=/etc/ncp
+ENV NCA_CONFIG_SOURCE=/resource/templates
+ENV NCA_CONFIG_TARGET=/etc/ncatomic
 ENV CADDY_ADMIN_SOCKET=/run/caddy/caddy-admin.sock
 ENV DIOXUS_IP="0.0.0.0"
 
-COPY --from=builder /app/dist /dist
+COPY --from=builder /app/dist /app/dist
 COPY resource /resource
 EXPOSE 8080
-WORKDIR /dist
-CMD ["/dist/activate"]
+WORKDIR /app
+CMD ["/app/dist/activate"]

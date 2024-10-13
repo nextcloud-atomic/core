@@ -3,24 +3,19 @@
 use dioxus::prelude::*;
 // use dioxus::fullstack::launch::LaunchBuilder;
 use dioxus::fullstack::prelude::{server, ServerFnError};
-use dioxus::prelude::*;
-use std::env;
+use std::{env, io};
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::str::FromStr;
 use async_std::task::sleep;
 use dioxus::fullstack::Config;
 use log::{info, LevelFilter};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tera::Context;
 use wasm_bindgen::JsValue;
-use regex::Regex;
 use futures_util::StreamExt;
-
 #[cfg(feature = "web")]
 use {
     wasm_bindgen::prelude::wasm_bindgen,
@@ -30,11 +25,11 @@ use {
 
 #[cfg(feature = "server")]
 use {
-    core::config::{NcAioConfig, NcpConfig},
+    core::config::{NcAioConfig, NcaConfig},
     core::crypto::{Crypto, CryptoValueProvider},
     std::time::Duration,
     std::process::exit,
-    ncp_core::templating::render_template,
+    ncatomic_core::templating::render_template,
     sd_notify::notify,
     sd_notify::NotifyState,
     bollard::Docker,
@@ -59,13 +54,20 @@ fn main() {
     // let mut launcher = LaunchBuilder::new(app);
     // launcher = set_server_address(launcher);
     // launcher.launch();
+    let config_path = PathBuf::from(env::var("NCA_CONFIG_TARGET")
+                                        .expect("NCA_CONFIG_TARGET must be set"));
 
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async {
-            caddy_enable_activation_page().await.expect("Failed to configure caddy");
+            if config_path.join("ncatomic.json").exists() {
+                caddy_enable_nextcloud().await.expect("Failed to enable nextcloud page");
+                notify_service_successful().expect("Failed to notify systemd service completion");
+            } else {
+                caddy_enable_activation_page().await.expect("Failed to configure caddy");
+            }
         });
     let cfg = Config::default()
         .addr(SocketAddr::new(
@@ -104,23 +106,28 @@ fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathB
 }
 
 #[server]
-async fn activate_ncp(user_pass: String) -> Result<(), ServerFnError> {
-let crypto = Crypto::new(ncp_core::NCP_VERSION, &user_pass).map_err(ServerFnError::new)?;
-    let config = NcpConfig::new(ncp_core::NCP_VERSION, &crypto).map_err(ServerFnError::new)?;
+async fn activate_ncatomic(user_pass: String) -> Result<(), ServerFnError> {
+let crypto = Crypto::new(ncatomic_core::NCATOMIC_VERSION, &user_pass).map_err(ServerFnError::new)?;
+    let config = NcaConfig::new(ncatomic_core::NCATOMIC_VERSION, &crypto).map_err(ServerFnError::new)?;
 
-    let config_template_base_path = PathBuf::from(env::var("NCP_CONFIG_SOURCE")
+    let config_template_base_path = PathBuf::from(env::var("NCA_CONFIG_SOURCE")
         .map_err(print_err)?);
-    let config_render_base_path = PathBuf::from(env::var("NCP_CONFIG_TARGET")
+    let config_render_base_path = PathBuf::from(env::var("NCA_CONFIG_TARGET")
         .map_err(print_err)?);
-    config.save(config_render_base_path.join("ncp.json.j2")).map_err(ServerFnError::new)?;
+    config.save(config_render_base_path.join("ncatomic.json")).map_err(ServerFnError::new)?;
     render_aio_config(config.nc_aio,
                       &crypto,
                       config_template_base_path.join("nextcloud-aio"),
                       config_render_base_path.join("nextcloud-aio"))?;
-    notify(true, &[NotifyState::Ready]).
+    notify_service_successful().
         map_err(|e| ServerFnError::new("Could not complete activation: ".to_string() + &e.to_string()))?;
     Ok(())
     //    .expect("Failed to create master key from password");
+}
+
+#[cfg(feature = "server")]
+fn notify_service_successful() -> io::Result<()> {
+    notify(true, &[NotifyState::Ready])
 }
 
 #[server]
@@ -166,7 +173,7 @@ async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
     let container_strings = containers
         .iter().filter_map(move |s| {
         let names = s.names.clone().unwrap_or(vec!());
-        if !names.iter().any(|name| name.starts_with("/nextcloud-aio") || name == "ncp-caddy") {
+        if !names.iter().any(|name| name.starts_with("/nextcloud-aio") || name == "nca-caddy") {
             println!("names: [{}]", names.join(", "));
             return None
         }
@@ -179,10 +186,15 @@ async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
         ))
     }).collect();
     let is_ready = containers.iter().any(|container| {
-        println!("{}", container.state.clone().unwrap());
+        println!("{} - {}",
+                 container.names.clone().unwrap_or_default().first()
+                        .unwrap_or(&String::from("unknown")),
+                 container.state.clone().unwrap());
         container.state.clone().unwrap_or("unknown".into()) == "running" &&
-            container.names.clone().unwrap_or(vec![]).iter().any(|s| s == "/nextcloud-aio-apache")
+            container.names.clone().unwrap_or_default().iter()
+                .any(|s| s.starts_with("/nextcloud-aio-nextcloud-aio-apache"))
     });
+    println!("isReady? {is_ready}");
     Ok(ContainerStatusResult {
         ready: is_ready,
         docker_version: version.version.unwrap(),
@@ -193,15 +205,22 @@ async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
 #[cfg(feature = "server")]
 async fn caddy_enable_activation_page() -> anyhow::Result<()> {
     let caddy_cli = CaddyClient::new(&env::var("CADDY_ADMIN_SOCKET")?)?;
-    let mut f = File::options().read(true).open("/resource/caddy/default_ncp_activation.json")?;
+    let mut f = File::options().read(true).open("/resource/caddy/default_ncatomic_activation.json")?;
     let mut cfg = String::new();
     f.read_to_string(&mut cfg)?;
-    let _ = caddy_cli.set_caddy_servers(cfg).await?;
+    caddy_cli.set_caddy_servers(cfg).await?;
     Ok(())
 }
 
 #[server]
 async fn caddy_enable_nextcloud() -> Result<(), ServerFnError>{
+    let caddy_cli = CaddyClient::new(&env::var("CADDY_ADMIN_SOCKET")?)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut f = File::options().read(true).open("/resource/caddy/default_nc_aio.json")?;
+    let mut cfg = String::new();
+    f.read_to_string(&mut cfg)?;
+    caddy_cli.set_caddy_servers(cfg).await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(())
 }
 
@@ -232,10 +251,23 @@ pub fn app() -> Element {
                     Ok(result) => {
                         ready = result.ready;
                         containers_status.set(Some(result));
+                        if ready {
+                            match caddy_enable_nextcloud().await {
+                                Ok(_) => {
+                                    if let Err(e) = terminate().await {
+                                        error_message.set(Some("Failed to stop server: ".to_string() + &e.to_string()))
+                                    }
+                                },
+                                Err(e) => {
+                                    error_message.set(Some("Failed to configure reverse proxy: ".to_string() + &e.to_string()))
+                                }
+                            }
+                        }
                     }
                     Err(e) => {
-                        error_message.set(Some(e.to_string()));
+                        error_message.set(Some("Failed to start Nextcloud services: ".to_string() + &e.to_string()));
                     }
+                        
                 }
             }
         }
@@ -255,18 +287,17 @@ pub fn app() -> Element {
                 onclick: move |evt| {
                     to_owned![status, userpass, activated, nc_status_check];
                     async move {
-                        if let Err(e) = activate_ncp(userpass.take()).await {
+                        if let Err(e) = activate_ncatomic(userpass.take()).await {
                             status.set(e.to_string());
                         } else {
                             nc_status_check.send(true);
-                            //terminate().await.expect("Failed to stop server");
                             status.set("Nextcloud Atomic activated successfully! - Waiting for services to start".to_string());
                             activated.set(true)
                         }
                     }
 
                 },
-                "Activate NCP",
+                "Activate Nextcloud Atomic",
             },
             div {
                 "{status}",
@@ -306,7 +337,7 @@ mod tests {
     #[test]
     fn render_aio_templates() {
         let aio_cfg = NcAioConfig::default();
-        let crypto = Crypto::new(ncp_core::NCP_VERSION, "testpw")
+        let crypto = Crypto::new(ncatomic_core::NCATOMIC_VERSION, "testpw")
             .expect("failed to create crypto");
         let mut tera_ctx = Context::new();
         tera_ctx.insert("NC_AIO_CONFIG", &aio_cfg);

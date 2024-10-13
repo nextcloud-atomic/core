@@ -5,6 +5,6 @@
 }
 
 localhost {
-  reverse_proxy /activate ncp-activation:8080;
-  respond / "NextcloudPi is still starting... Please refresh this page in a few seconds."
+  reverse_proxy /activate nca-activation:8080;
+  respond / "Nextcloud Atomic is still starting... Please refresh this page in a few seconds."
 }

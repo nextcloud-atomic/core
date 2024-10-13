@@ -1,10 +1,10 @@
-{
+    {
   "default": {
     "listen": ["0.0.0.0:443"],
     "routes": [{
       "match": [
         {
-          "host": ["localhost", "nextcloudpi.local"]
+          "host": ["localhost", "nextcloudatomic.local"]
         }
       ],
       "handle": [
@@ -17,7 +17,7 @@
         {
           "handler": "reverse_proxy",
           "dynamic_upstreams": {
-            "name": "ncp-activation",
+            "name": "nca-activation",
             "port": "8080",
             "refresh": 5000000000,
             "resolver": {

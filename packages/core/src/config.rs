@@ -30,7 +30,7 @@ pub struct NcAioConfig {
     #[serde_inline_default(DerivedSecret::from("AIO_TURN_SECRET"))]
     turn_secret: DerivedSecret,
 
-    #[serde_inline_default(String::from("nextcloudpi.local"))]
+    #[serde_inline_default(String::from("nextcloudatomic.local"))]
     nc_domain: String,
     #[serde_inline_default(false)]
     onlyoffice_enabled: bool,
@@ -51,7 +51,7 @@ pub struct NcAioConfig {
 impl NcAioConfig {
     pub fn create() -> Self {
         let cfg: NcAioConfig = serde_json::from_str("{}")
-            .expect("Failed to create ncp core");
+            .expect("Failed to create NC Atomic core");
         cfg
     }
 
@@ -84,23 +84,23 @@ pub struct KeyDerivationSecrets {
     pub key_derivation_key_nonce: String,
     pub key_derivation_key: String,
     pub key_encryption_key_salt: String,
-    pub ncp_version: String
+    pub ncatomic_version: String
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NcpConfig {
+pub struct NcaConfig {
     pub nc_aio: NcAioConfig,
     pub kdk: KeyDerivationSecrets,
-    pub ncp_version: String
+    pub ncatomic_version: String
 }
 
-impl NcpConfig {
-    pub fn new(ncp_version: &str, crypto: &Crypto) -> Result<Self> {
+impl NcaConfig {
+    pub fn new(ncatomic_version: &str, crypto: &Crypto) -> Result<Self> {
         Ok(Self {
             kdk: crypto.try_into()
                 .map_err(|e| anyhow!("Failed to retrieve crypto core: {}", e))?,
             nc_aio: NcAioConfig::create(),
-            ncp_version: ncp_version.into()
+            ncatomic_version: ncatomic_version.into()
         })
     }
 

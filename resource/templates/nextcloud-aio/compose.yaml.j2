@@ -27,7 +27,6 @@ services:
     ports:
       - ${APACHE_IP_BINDING}:${APACHE_PORT}:${APACHE_PORT}/tcp
       - ${APACHE_IP_BINDING}:${APACHE_PORT}:${APACHE_PORT}/udp
-      - ${APACHE_IP_BINDING}:80:8000
     environment:
       - NC_DOMAIN=${NC_DOMAIN}
       - NEXTCLOUD_HOST=nextcloud-aio-nextcloud
@@ -44,7 +43,8 @@ services:
       - nextcloud_aio_apache:/mnt/data:rw
     restart: unless-stopped
     networks:
-      - nextcloud-aio
+                  - nextcloud-aio
+                  - nextcloud-aio-caddy
     read_only: true
     tmpfs:
       - /var/log/supervisord
@@ -382,3 +382,5 @@ networks:
       driver: default
       config:
         - subnet: ${IPV6_NETWORK}
+  nextcloud-aio-caddy:
+    external: true

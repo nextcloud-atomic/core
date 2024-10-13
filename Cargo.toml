@@ -64,7 +64,7 @@ version = "0.3.70"
 features = ["Window", "Location"]
 
 [lib]
-name = "ncp_core"
+name = "ncatomic_core"
 path = "src/lib.rs"
 
 [[bin]]

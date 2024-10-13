@@ -4,20 +4,9 @@
     "routes": [{
       "match": [
         {
-          "host": ["localhost", "nextcloudpi.local"]
+          "host": ["localhost", "nextcloudatomic.local"]
         }
       ],
-      "terminal": true,
-      "tls": {
-        "automation": {
-          "policies": [{
-            "issues":  [{
-              "module": "internal"
-            }],
-            "subjects": ["localhost", "nextcloudpi.local"]
-          }]
-        }
-      },
       "handle": [
         {
           "handler": "headers",
@@ -29,7 +18,7 @@
           "handler": "reverse_proxy",
           "upstreams": [
             {
-              "dial": "127.0.0.1:1080",
+                      "dial": "nextcloud-aio-apache:1080",
               "max_requests": 0
             }
           ]

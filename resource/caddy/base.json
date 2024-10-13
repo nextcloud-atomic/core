@@ -2,7 +2,7 @@
   "apps": {
     "http": {
       "servers": {
-        "ncp-activation": {
+        "nca-activation": {
           "listen": [":443", ":80"],
           "routes": [
             {

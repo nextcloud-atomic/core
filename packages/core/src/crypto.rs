@@ -9,7 +9,7 @@ use ring::pbkdf2::PBKDF2_HMAC_SHA512;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeStruct;
-use crate::config::{KeyDerivationSecrets, NcpConfig};
+use crate::config::{KeyDerivationSecrets, NcaConfig};
 use anyhow::{anyhow, bail, Result};
 
 const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {padding: true};
@@ -27,7 +27,7 @@ pub fn decode(data: &str) -> Result<Vec<u8>> {
 #[derive(Clone, Deserialize)]
 pub struct Crypto {
     locked: bool,
-    ncp_version: String,
+    ncatomic_version: String,
     kek: Option<Vec<u8>>,
     kek_salt: [u8; 16],
     kdk: Vec<u8>,
@@ -35,7 +35,7 @@ pub struct Crypto {
 }
 impl Crypto {
 
-    pub fn new(ncp_version: &str, pass: &str) -> Result<Self> {
+    pub fn new(ncatomic_version: &str, pass: &str) -> Result<Self> {
         let kek_salt = Self::generate_salt()?;
 
         let mut kdk = vec![0u8; SHA512_OUTPUT_LEN];
@@ -44,7 +44,7 @@ impl Crypto {
         rng.fill(&mut kdk)?;
         let nonce_bytes = Self::generate_nonce()?;
 
-        let mut crypto = Self::load_unsafe(&encode(&kek_salt), &encode(&kdk), &encode(&nonce_bytes), ncp_version, false)?;
+        let mut crypto = Self::load_unsafe(&encode(&kek_salt), &encode(&kdk), &encode(&nonce_bytes), ncatomic_version, false)?;
         let kek_secret = Self::create_key_from_pass(kek_salt, pass, KEK_CIPHER.key_len());
         crypto.lock_unsafe(kek_secret)?;
         crypto.unlock(pass)?;
@@ -58,13 +58,13 @@ impl Crypto {
         Ok(nonce_bytes.try_into().map_err(|_| anyhow!("failed to convert nonce"))?)
     }
 
-    fn load_unsafe(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str, locked: bool) -> Result<Self> {
+    fn load_unsafe(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncatomic_version: &str, locked: bool) -> Result<Self> {
         let kek_salt = decode(kek_salt_str)?;
         let kdk_data = decode(kdk_data_str)?;
         let kdk_nonce_bytes = decode(kdk_nonce_str)?;
 
         Ok(Crypto {
-            ncp_version: ncp_version.to_string(),
+            ncatomic_version: ncatomic_version.to_string(),
             locked,
             kek: None,
             kek_salt: kek_salt.try_into().map_err(|_| anyhow!("Failed to convert salt"))?,
@@ -73,8 +73,8 @@ impl Crypto {
         })
     }
 
-    pub fn load(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncp_version: &str) -> Result<Self> {
-        Self::load_unsafe(kek_salt_str, kdk_data_str, kdk_nonce_str, ncp_version, true)
+    pub fn load(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncatomic_version: &str) -> Result<Self> {
+        Self::load_unsafe(kek_salt_str, kdk_data_str, kdk_nonce_str, ncatomic_version, true)
     }
 
     pub fn is_locked(&self) -> bool {
@@ -89,7 +89,7 @@ impl Crypto {
             .map_err(|e| anyhow!("failed to init nonce: {e}"))?;
         let mut in_out = self.kdk.clone();
         let decrypted = kek.open_in_place(nonce,
-                                          Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
+                                          Aad::from(format!("ncatomic::{}", self.ncatomic_version).as_bytes()),
                                           &mut in_out).map_err(|e| anyhow!("failed to open kdk: {e}"))?;
         self.kdk = decrypted.into();
 
@@ -112,7 +112,7 @@ impl Crypto {
         let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)?;
 
         kek.seal_in_place_append_tag(nonce,
-                                     Aad::from(format!("ncp::{}", self.ncp_version).as_bytes()),
+                                     Aad::from(format!("ncatomic::{}", self.ncatomic_version).as_bytes()),
                                      &mut self.kdk).map_err(|e| anyhow!("Failed to encrypt: {e}"))?;
         self.locked = true;
         self.kdk_nonce = nonce_bytes.try_into()
@@ -169,7 +169,7 @@ impl TryInto<KeyDerivationSecrets> for &Crypto {
             key_derivation_key_nonce: encode(&locked_crypto.kdk_nonce),
             key_encryption_key_salt: encode(&locked_crypto.kek_salt),
             key_derivation_key: encode(&locked_crypto.kdk),
-            ncp_version: locked_crypto.ncp_version.to_string()
+            ncatomic_version: locked_crypto.ncatomic_version.to_string()
         })
     }
 }
@@ -180,7 +180,7 @@ impl TryFrom<KeyDerivationSecrets> for Crypto {
         Crypto::load(config.key_encryption_key_salt.as_str(),
                      config.key_derivation_key.as_str(),
                      config.key_derivation_key_nonce.as_str(),
-                     config.ncp_version.as_str())
+                     config.ncatomic_version.as_str())
     }
 }
 
@@ -197,7 +197,7 @@ impl Serialize for Crypto {
         };
 
         let mut json = serializer.serialize_struct("crypto", 5)?;
-        json.serialize_field("ncp_version", &copy.ncp_version)?;
+        json.serialize_field("ncatomic_version", &copy.ncatomic_version)?;
         json.serialize_field("locked", &copy.locked)?;
         let none: Option<Vec<u8>> = None;
         json.serialize_field("kek", &none)?;
@@ -215,10 +215,10 @@ impl Debug for Crypto {
     }
 }
 
-impl From<NcpConfig> for Crypto {
-    fn from(cfg: NcpConfig) -> Self {
+impl From<NcaConfig> for Crypto {
+    fn from(cfg: NcaConfig) -> Self {
         Self::load(cfg.kdk.key_encryption_key_salt.as_str(), cfg.kdk.key_derivation_key.as_str(),
-                   cfg.kdk.key_derivation_key_nonce.as_str(), cfg.ncp_version.as_str())
+                   cfg.kdk.key_derivation_key_nonce.as_str(), cfg.ncatomic_version.as_str())
             .expect("Failed to load crypto from configuration")
 
     }

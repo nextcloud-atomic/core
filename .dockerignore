@@ -2,5 +2,5 @@ dist
 out
 .idea
 target
-Dockerfile
+Dockerfile*
 /conf/*
