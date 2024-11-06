@@ -1,6 +1,5 @@
-#![feature(proc_macro_quote)]
 use proc_macro::{TokenStream};
-use quote::{format_ident, quote};
+use quote::{quote};
 use syn::{LitStr, DeriveInput, Field};
 use syn::__private::quote;
 
@@ -47,11 +46,10 @@ pub(crate) fn get_kv_from_field(field: &Field) -> Result<Option<proc_macro2::Tok
             // let method_call = quote!(&self.#field_name_ident.to_string());
             
             let serialize_fn = match serialize_fn_opt {
-                None => quote!(self.#field_name_ident.to_string ()),
+                None => quote!(self.#field_name_ident.to_string()),
                 Some(f) => {
-                    // let f_ident = Ident::new(f.as_str(), proc_macro::Span::call_site());
-                    let f_ident = format_ident!("{}", f);
-                    quote!(#f_ident ( &self.#field_name_ident ))
+                    let f_token_stream: proc_macro2::TokenStream = f.parse().unwrap();
+                    quote!(#f_token_stream ( &self.#field_name_ident ))
                 }
             };
             
@@ -68,7 +66,7 @@ pub(crate) fn expand_struct(ast: DeriveInput) -> TokenStream {
         unimplemented!()
     };
     let kvs = data.fields.iter().enumerate().filter_map(|(i, field)| {
-        match crate::kvp::get_kv_from_field(field) {
+        match get_kv_from_field(field) {
             Err(e) => panic!("Error while parsing field {} of {}: {e:?}", ast.ident, i),
             Ok(opt) => opt
         }
@@ -79,9 +77,9 @@ pub(crate) fn expand_struct(ast: DeriveInput) -> TokenStream {
     let generics = ast.generics.clone();
 
     let expanded = quote! {
-        impl #generics kvp::KeyValueProvider for #name #generics {
-            fn to_map(&self) -> HashMap<String, String> {
-                let mut map: HashMap<String, String> = HashMap::new();
+        impl #generics key_value_provider::KeyValueProvider for #name #generics {
+            fn to_map(&self) -> std::collections::HashMap<String, String> {
+                let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
                 #(#kvs)*
                 map
             }

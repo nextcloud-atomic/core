@@ -1,20 +1,19 @@
+#![feature(slice_pattern)]
+
 use core::slice::SlicePattern;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 use hex_literal::hex;
 use ring::{aead, digest, hkdf, pbkdf2};
-use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, UnboundKey, SealingKey, BoundKey};
+use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, UnboundKey};
 use ring::digest::{digest};
 use ring::hkdf::{HKDF_SHA256};
 use ring::pbkdf2::PBKDF2_HMAC_SHA512;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde::ser::SerializeStruct;
 use anyhow::{anyhow, bail, Result};
 use secrets::{SecretVec};
-use secrets::traits::AsContiguousBytes;
 use serde::de::{Error, Visitor};
-use crate::NCATOMIC_VERSION;
 // reference: https://github.com/neosmart/securestore-rs/blob/master/securestore/src/shared.rs
 
 const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {padding: true};
@@ -127,13 +126,13 @@ impl<'a> LockableSecret<'a> {
         LockableSecret::Locked(locked)
     }
 
-    pub fn new_encrypted(key: &'a SecretVec<u8>, plaintext: SecretVec<u8>, salt: Salt) -> Result<LockableSecret<'a>> {
-        let encrypted = encrypt_vec(key, plaintext, salt)?;
+    pub fn new_encrypted(key: &'a SecretVec<u8>, salt: Salt, version: String, plaintext: SecretVec<u8>) -> Result<LockableSecret<'a>> {
+        let encrypted = encrypt_vec(key, plaintext, salt, format!("version::{version}"))?;
         Ok(LockableSecret::Unlocked(UnlockedSecret{
             key,
             salt,
             secret_data: LockedSecret::ENCRYPTED(EncryptedSecret {
-                source_version: String::from(NCATOMIC_VERSION),
+                source_version: version,
                 data: encrypted.data,
                 nonce: encrypted.nonce
             })
@@ -155,7 +154,7 @@ impl<'a> LockableSecret<'a> {
             secret_id: secret_id.into(),
         }))
     }
-    
+
     pub fn new_empty_locked() -> LockableSecret<'a> {
         LockableSecret::Locked(LockedSecret::EMPTY)
     }
@@ -241,14 +240,14 @@ pub struct UnlockedSecret<'a> {
 }
 
 impl UnlockedSecret<'_> {
-    
+
     pub fn secret_value(self) -> Result<SecretVec<u8>> {
         match self.secret_data {
             LockedSecret::DERIVED(secret) => {
                 Ok(derive_secret(self.key, secret.secret_id.clone())?)
             },
             LockedSecret::ENCRYPTED(secret) => {
-                Ok(decrypt_vec(self.key, Vec::from(secret.data.clone()), secret.nonce, self.salt)?)
+                Ok(decrypt_vec(self.key, Vec::from(secret.data.clone()), secret.nonce, self.salt, format!("version::{}", secret.source_version))?)
             },
             LockedSecret::EMPTY => {
                 Ok(SecretVec::<u8>::zero(0))
@@ -271,7 +270,7 @@ fn generate_nonce() -> [u8; NONCE_LEN] {
     nonce_bytes.try_into().expect("failed to convert nonce")
 }
 
-fn encrypt_vec(key: &SecretVec<u8>, data: SecretVec<u8>, salt: Salt) -> Result<EncryptionResult> {
+fn encrypt_vec(key: &SecretVec<u8>, data: SecretVec<u8>, salt: Salt, associated_data: String) -> Result<EncryptionResult> {
     let nonce_bytes = generate_nonce();
     let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)
         .map_err(|e| anyhow!("Failed to generate nonce: {e:?}"))?;
@@ -283,7 +282,7 @@ fn encrypt_vec(key: &SecretVec<u8>, data: SecretVec<u8>, salt: Salt) -> Result<E
     ciphertext.copy_from_slice(data.borrow().as_slice());
     encryption_key.seal_in_place_append_tag(
         nonce,
-        Aad::from([format!("ncatomic::{NCATOMIC_VERSION}").as_bytes(), salt.as_slice()].concat()),
+        Aad::from([associated_data.as_bytes(), salt.as_slice()].concat()),
         &mut ciphertext
     )
         .map_err(|e| anyhow!("Failed to encrypt: {e}"))?;
@@ -293,14 +292,14 @@ fn encrypt_vec(key: &SecretVec<u8>, data: SecretVec<u8>, salt: Salt) -> Result<E
     })
 }
 
-fn decrypt_vec(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt) -> Result<SecretVec<u8>> {
-    let mut enc = decrypt_vec_unsafe(key, data, nonce_bytes, salt)?;
+fn decrypt_vec(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt, associated_data: String) -> Result<SecretVec<u8>> {
+    let enc = decrypt_vec_unsafe(key, data, nonce_bytes, salt, associated_data)?;
     Ok(SecretVec::<u8>::new(enc.len(), |s| {
         s.copy_from_slice(enc.as_slice());
     }))
 }
 
-fn decrypt_vec_unsafe(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt) -> Result<Vec<u8>> {
+fn decrypt_vec_unsafe(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt, associated_data: String) -> Result<Vec<u8>> {
 
     let decryption_key = LessSafeKey::new(
         UnboundKey::new(&KEK_CIPHER, &*key.borrow())
@@ -310,7 +309,7 @@ fn decrypt_vec_unsafe(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONC
     let mut in_out = data;
     let decrypted = decryption_key.open_in_place(
         nonce,
-        Aad::from([format!("ncatomic::{NCATOMIC_VERSION}").as_bytes(), salt.as_slice()].concat()),
+        Aad::from([associated_data.as_bytes(), salt.as_slice()].concat()),
         &mut in_out,
     ).map_err(|e| anyhow!("Failed to decrypt: {e}"))?;
     Ok(decrypted.to_vec())
@@ -368,7 +367,6 @@ mod tests {
     use super::*;
     use std::borrow::Borrow;
     use std::str;
-    use aes_siv::aead::Buffer;
 
     #[test]
     fn test_en_decode() {
@@ -385,13 +383,13 @@ mod tests {
     fn test_de_serialization_encryption() {
         let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
         let salt = generate_salt();
-        
+
         let plaintext = SecretVec::new(6, |mut s| {
             let mut v = "abcdef".as_bytes();
             s.copy_from_slice(&mut v)
         });
 
-        let sec = LockableSecret::new_encrypted(&masterkey, plaintext.clone(), salt)
+        let sec = LockableSecret::new_encrypted(&masterkey, salt, "0.0.1".to_string(), plaintext.clone())
             .expect("Failed to create encrypted secret");
         let serialized = serde_json::to_string(&sec).expect("failed to serialize to json");
         print!("{serialized}\n");
@@ -409,7 +407,7 @@ mod tests {
     fn test_de_serialization_derivation() {
         let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
         let salt = generate_salt();
-        
+
         let secret_id = "TEST_1".to_string();
 
         let sec = LockableSecret::new_derived(&masterkey, secret_id, salt)
@@ -432,22 +430,22 @@ mod tests {
             let mut v = "abcdef".as_bytes();
             s.copy_from_slice(&mut v)
         });
-        
+
         println!("plaintext length: {} | {}", plaintext.len(), plaintext.borrow().len());
         let salt = generate_salt();
 
         let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
 
-        let encrypted = encrypt_vec(&masterkey, plaintext, salt)
+        let encrypted = encrypt_vec(&masterkey, plaintext, salt, "test".to_string())
             .expect("Failed to encrypt data");
         println!("cipher text length: {}", encrypted.data.len());
-        let decrypted = decrypt_vec_unsafe(&masterkey, encrypted.data, encrypted.nonce, salt)
+        let decrypted = decrypt_vec_unsafe(&masterkey, encrypted.data, encrypted.nonce, salt, "test".to_string())
             .expect("Failed to decrypt data");
 
         assert_eq!("abcdef", decrypted.iter().map(|&c| char::from(c)).collect::<String>());
 
     }
-    
+
     #[test]
     fn unique_nonce() {
         let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
@@ -457,14 +455,14 @@ mod tests {
             let mut v = "abcdef".as_bytes();
             s.copy_from_slice(&mut v)
         });
-        let encrypted_1 = encrypt_vec(&masterkey, plaintext, salt)
+        let encrypted_1 = encrypt_vec(&masterkey, plaintext, salt, "test".to_string())
             .expect("Failed to encrypt data");
         let nonce_1 = encrypted_1.nonce;
-        let decrypted = decrypt_vec(&masterkey, encrypted_1.data, encrypted_1.nonce, salt)
+        let decrypted = decrypt_vec(&masterkey, encrypted_1.data, encrypted_1.nonce, salt, "test".to_string())
             .expect("Failed to decrypt data");
-        let encrypted_2 = encrypt_vec(&masterkey, decrypted, salt)
+        let encrypted_2 = encrypt_vec(&masterkey, decrypted, salt, "test".to_string())
             .expect("Failed to encrypt data");
-        
+
         assert_ne!(encrypted_1.nonce, encrypted_2.nonce);
     }
 
@@ -475,13 +473,13 @@ mod tests {
 
         let derived_1 = LockableSecret::new_derived(&masterkey, "TEST_1".to_string(), salt)
             .expect("Failed to derive secret");
-        
+
         let derived_2 = LockableSecret::new_derived(&masterkey, "TEST_1".to_string(), salt)
             .expect("Failed to derive secret");
-        
+
         let derived_3 = LockableSecret::new_derived(&masterkey, "TEST_2".to_string(), salt)
             .expect("Failed to derive secret");
-        
+
         assert_eq!(derived_1.secret_value().unwrap(), derived_2.secret_value().unwrap());
         assert_ne!(derived_1.secret_value().unwrap(), derived_3.secret_value().unwrap());
     }

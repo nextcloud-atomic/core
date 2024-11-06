@@ -2,15 +2,14 @@ use std::env;
 use std::fmt::Display;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use axum::extract::FromRef;
 use secrets::SecretVec;
 use tera::Context;
 use errors::NcAtomicError;
 use core::NCATOMIC_VERSION;
 use core::config::{NcaConfig, NcAioConfig};
-use kvp::KeyValueProvider;
 use core::templating::render_template;
-use core::crypto::{LockableSecret};
+use key_value_provider::KeyValueProvider;
+use lockable_secret::{LockableSecret};
 
 pub mod ui;
 
@@ -158,17 +157,17 @@ pub fn activate(ctx: ActivationContext, config: ActivationConfig) -> Result<(), 
         .map_err(|e| NcAtomicError::InvalidPath(config.nc_storage_directory, e.to_string()))?;
 
     let mut cfg = NcaConfig::new(NCATOMIC_VERSION, None).map_err(NcAtomicError::new_unexpected_error)?;
-    let mut pw_bytes = config.credentials.as_ref().unwrap().master_password.to_string();
+    let pw_bytes = config.credentials.as_ref().unwrap().master_password.to_string();
     let password: SecretVec<u8> = SecretVec::new(pw_bytes.len(), |s| {
         s.copy_from_slice(pw_bytes.as_bytes());
     });
     let masterkey = cfg.get_masterkey(password);
     cfg.unlock(&masterkey).map_err(NcAtomicError::new_crypto_error)?;
-    let mut admin_pw_str = config.credentials.unwrap().admin_password.to_string();
+    let admin_pw_str = config.credentials.unwrap().admin_password.to_string();
     let admin_pw_val: SecretVec<u8> = SecretVec::new(admin_pw_str.len(), |s| {
         s.copy_from_slice(admin_pw_str.as_bytes());
     });
-    cfg.admin_password = LockableSecret::new_encrypted(&masterkey, admin_pw_val, cfg.get_salt())
+    cfg.admin_password = LockableSecret::new_encrypted(&masterkey, cfg.get_salt(), NCATOMIC_VERSION.to_string(), admin_pw_val)
         .map_err(NcAtomicError::new_crypto_error)?;
 
     let config_template_base_path = PathBuf::from(ctx.config_template_directory);
@@ -216,11 +215,11 @@ pub fn is_activated(ctx: ActivationContext) -> Result<bool, NcAtomicError> {
 mod tests {
     use std::fs;
     use std::fs::File;
-    use std::io::{Read, Write};
-    use secrets::{Secret, SecretBox, SecretVec};
+    use std::io::{Read};
+    use secrets::{SecretVec};
     use super::*;
     use tempdir::TempDir;
-    use core::crypto::{encode, LockableSecret, secret_to_secret_string};
+    use lockable_secret::{LockableSecret, secret_to_secret_string};
 
     #[test]
     fn activation_generates_config_files() {
@@ -284,7 +283,7 @@ mod tests {
         // let template_dir = tmp_dir.path().join("templates");
         let render_dir = tmp_dir.path().join("target");
         create_dir_all(&render_dir).expect("failed to create render dir");
-        let nc_storage_dir = tmp_dir.path().join("ncdata");
+        // let nc_storage_dir = tmp_dir.path().join("ncdata");
         let template_dir = env::current_exe().unwrap().parent().unwrap().join("../../../resource/templates/");
 
         let pw = "abcdefghijklmnopqrstuvwxyz";

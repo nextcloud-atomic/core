@@ -9,7 +9,9 @@ dependencies = [
  "axum",
  "core",
  "errors",
- "kvp",
+ "key_value_provider",
+ "lockable_secret",
+ "lockable_secret_macros",
  "secrets",
  "tempdir",
  "tera",
@@ -120,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.89"
+version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
+checksum = "4c95c10ba0b00a02636238b814946408b1322d5ac4760326e6fb8ec956d85775"
 
 [[package]]
 name = "anymap"
@@ -728,13 +730,11 @@ dependencies = [
  "aead 0.6.0-rc.0",
  "aes-siv",
  "anyhow",
- "base32",
  "digest 0.11.0-pre.9",
- "hex",
- "hex-literal",
  "hkdf",
- "kvp",
- "macros",
+ "key_value_provider",
+ "lockable_secret",
+ "lockable_secret_macros",
  "pbkdf2",
  "ring",
  "secrets",
@@ -2310,6 +2310,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "key_value_provider"
+version = "0.1.0"
+
+[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2341,10 +2345,6 @@ checksum = "0de8b303297635ad57c9f5059fd9cee7a47f8e8daa09df0fcd07dd39fb22977f"
 dependencies = [
  "log",
 ]
-
-[[package]]
-name = "kvp"
-version = "0.1.0"
 
 [[package]]
 name = "lazy_static"
@@ -2381,6 +2381,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockable_secret"
+version = "0.1.0"
+dependencies = [
+ "aead 0.6.0-rc.0",
+ "anyhow",
+ "base32",
+ "digest 0.11.0-pre.9",
+ "hex",
+ "hex-literal",
+ "hkdf",
+ "pbkdf2",
+ "ring",
+ "secrets",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lockable_secret_macros"
+version = "0.1.0"
+dependencies = [
+ "key_value_provider",
+ "lockable_secret",
+ "proc-macro2",
+ "quote",
+ "secrets",
+ "serde",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
 name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2402,20 +2434,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ee39891760e7d94734f6f63fedc29a2e4a152f836120753a72503f09fcf904"
 dependencies = [
  "hashbrown 0.14.5",
-]
-
-[[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "core",
- "kvp",
- "proc-macro2",
- "quote",
- "secrets",
- "serde",
- "serde_json",
- "syn",
 ]
 
 [[package]]

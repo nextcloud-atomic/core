@@ -13,13 +13,11 @@ digest = "0.11.0-pre.9"
 hkdf = "0.13.0-pre.4"
 pbkdf2 = "0.13.0-pre.1"
 anyhow = {workspace = true}
-base32 = "0.5.1"
-hex = "0.4.3"
-hex-literal = "0.4.1"
 tera = {workspace = true}
 aes-siv = "0.7.0"
 secrets = { workspace = true }
 strum = {workspace = true}
 strum_macros = {workspace = true}
-kvp = {path = "../kvp" }
-macros = {path = "../macros" }
+key_value_provider = { workspace = true }
+lockable_secret_macros = { workspace = true }
+lockable_secret = {workspace = true}

@@ -1,5 +1,5 @@
 [package]
-name = "kvp"
+name = "key_value_provider"
 edition = "2021"
 version.workspace = true
 

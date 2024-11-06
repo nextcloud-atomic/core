@@ -10,4 +10,6 @@ core = {workspace = true}
 tera = {workspace = true}
 tempdir = "0.3.7"
 secrets = {workspace = true}
-kvp = {workspace = true}
+key_value_provider = {workspace = true}
+lockable_secret = {workspace = true}
+lockable_secret_macros = {workspace = true}

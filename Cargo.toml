@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [ "packages/activate","packages/caddy", "packages/core", "packages/errors", "packages/kvp", "packages/macros", "packages/model", "packages/ui"]
+members = [ "packages/activate","packages/caddy", "packages/core", "packages/lockable_secret", "packages/errors", "packages/key_value_provider", "packages/lockable_secret_macros", "packages/model", "packages/ui"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -33,7 +33,9 @@ tera = "1.19.1"
 strum = "0.26.1"
 strum_macros = "0.26.1"
 secrets = "1.2.0"
-kvp = {path = "packages/kvp"}
+lockable_secret = {version = "0.1.0", path = "packages/lockable_secret"}
+lockable_secret_macros = {version = "0.1.0", path = "packages/lockable_secret_macros"}
+key_value_provider = {version = "0.1.0", path = "packages/key_value_provider"}
 
 [workspace.package]
 version = "0.1.0"

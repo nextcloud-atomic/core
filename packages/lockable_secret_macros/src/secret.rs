@@ -58,9 +58,9 @@ pub(crate) fn expand_struct(mut item: ItemStruct) -> proc_macro::TokenStream {
             
             let fn_body= if is_derived {
                 let derived_key_val = derived_key.clone();
-                quote!(LockableSecret::new_derived_locked(#derived_key_val))
+                quote!(lockable_secret::LockableSecret::new_derived_locked(#derived_key_val))
             } else { 
-                quote!(LockableSecret::new_empty_locked())
+                quote!(lockable_secret::LockableSecret::new_empty_locked())
             };
 
             // we check here if a function with the exact same return value already exists. if so,
@@ -77,7 +77,7 @@ pub(crate) fn expand_struct(mut item: ItemStruct) -> proc_macro::TokenStream {
                 let inline_fn = quote! {
                     #[doc(hidden)]
                     #[allow(non_snake_case)]
-                    fn #fn_name_ident<'a> () -> LockableSecret<'a> {
+                    fn #fn_name_ident<'a> () -> lockable_secret::LockableSecret<'a> {
                         #fn_body
                     }
                 };
@@ -95,7 +95,8 @@ pub(crate) fn expand_struct(mut item: ItemStruct) -> proc_macro::TokenStream {
                 // Setup KeyValueProvider trait
                 if let Some(key_name) = kvp_name {
                     if !field.attrs.iter().any(|a| a.path().is_ident("kvp")) {
-                        field.attrs.push(parse_quote!(#[kvp(name = #key_name, fn="secret_to_secret_string")]));
+                        // let fn_name_lit = Ident::new("secret_to_secret_string", Span::call_site()).to_string();
+                        field.attrs.push(parse_quote!(#[kvp(name = #key_name, fn="lockable_secret::secret_to_secret_string")]));
                     }
                 }
             }
@@ -108,19 +109,20 @@ pub(crate) fn expand_struct(mut item: ItemStruct) -> proc_macro::TokenStream {
     }
     let name = &item.ident;
 
-    let mut generics = item.generics.clone();
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let generics = item.generics.clone();
+    let (_, _, where_clause) = generics.split_for_impl();
 
     let real_inline_fns: Vec<TokenStream> =
         inline_fns.into_iter().map(|(_, _, func)| func).collect();
     
     let expanded = quote! {
+        
         #( #real_inline_fns )*
 
         #item
         
-        impl <'_secret> Unlockable <'_secret> for #name <'_secret> #where_clause {
-            fn unlock(&mut self, key: &'_secret SecretVec<u8>, salt: Salt) -> Result<(), String> {
+        impl <'_secret> lockable_secret::Unlockable <'_secret> for #name <'_secret> #where_clause {
+            fn unlock(&mut self, key: &'_secret secrets::SecretVec<u8>, salt: lockable_secret::Salt) -> Result<(), String> {
                 #( #unlock_exprs )*
                 Ok(())
             }

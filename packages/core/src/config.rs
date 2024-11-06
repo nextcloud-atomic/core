@@ -1,19 +1,19 @@
-use std::cell::Ref;
-use std::collections::HashMap;
-use std::fmt::Display;
 use std::fs::File;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_inline_default::serde_inline_default;
-use anyhow::{anyhow, bail, Result};
-use strum_macros::EnumString;
-use std::str::FromStr;
-use ring::aead::chacha20_poly1305_openssh::KEY_LEN;
+use anyhow::{anyhow, Result};
 use secrets::SecretVec;
-use kvp::KeyValueProvider;
-use macros::{secret, KeyValueProvider};
-use crate::crypto;
-use crate::crypto::{Salt, serde_encode, serde_decode_sized, generate_salt, LockableSecret, create_key_from_pass, Unlockable, secret_to_secret_string};
+use lockable_secret_macros::{secret, KeyValueProvider};
+use lockable_secret::{
+    Salt,
+    serde_encode,
+    serde_decode_sized,
+    generate_salt,
+    LockableSecret,
+    create_key_from_pass,
+    Unlockable
+};
 
 #[secret]
 #[serde_inline_default]
