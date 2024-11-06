@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [ "packages/activate","packages/caddy", "packages/config/disks", "packages/core", "packages/errors", "packages/kvp", "packages/macros", "packages/model", "packages/ui", "packages/unlock"]
+members = [ "packages/activate","packages/caddy", "packages/core", "packages/errors", "packages/kvp", "packages/macros", "packages/model", "packages/ui"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
