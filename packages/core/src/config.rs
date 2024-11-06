@@ -1,104 +1,97 @@
+use std::cell::Ref;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_inline_default::serde_inline_default;
-use crate::crypto::{Crypto, CryptoValueProvider};
-use crate::secrets::{DerivedSecret};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
+use strum_macros::EnumString;
+use std::str::FromStr;
+use ring::aead::chacha20_poly1305_openssh::KEY_LEN;
+use secrets::SecretVec;
+use kvp::KeyValueProvider;
+use macros::{secret, KeyValueProvider};
+use crate::crypto;
+use crate::crypto::{Salt, serde_encode, serde_decode_sized, generate_salt, LockableSecret, create_key_from_pass, Unlockable, secret_to_secret_string};
 
-
+#[secret]
 #[serde_inline_default]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NcAioConfig {
-    #[serde_inline_default(DerivedSecret::from("AIO_DATABASE_PASSWORD"))]
-    db_password: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_FULLTEXTSEARCH_PASSWORD"))]
-    fulltextsearch_pw: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_NEXTCLOUD_PASSWORD"))]
-    nc_password: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_ONLYOFFICE_SECRET"))]
-    onlyoffice_secret: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_RECORDING_SECRET"))]
-    recording_secret: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_REDIS_PASSWORD"))]
-    redis_password: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_SIGNALING_SECRET"))]
-    signaling_secret: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_TALK_INTERNAL_SECRET"))]
-    talk_internal_secret: DerivedSecret,
-    #[serde_inline_default(DerivedSecret::from("AIO_TURN_SECRET"))]
-    turn_secret: DerivedSecret,
+#[derive(Debug, Clone, Serialize, Deserialize, KeyValueProvider)]
+pub struct NcAioConfig<'a> {
+
+    #[secret(derived = "AIO_DATABASE_PASSWORD")]
+    pub db_password: LockableSecret<'a>,
+    #[secret(derived = "AIO_FULLTEXTSEARCH_PASSWORD")]
+    pub fulltextsearch_pw: LockableSecret<'a>,
+    #[secret(encrypted = "AIO_NEXTCLOUD_PASSWORD")]
+    pub nc_password: LockableSecret<'a>,
+    #[secret(derived = "AIO_ONLYOFFICE_SECRET")]
+    pub onlyoffice_secret: LockableSecret<'a>,
+    #[secret(derived = "AIO_RECORDING_SECRET")]
+    pub recording_secret: LockableSecret<'a>,
+    #[secret(derived = "AIO_REDIS_PASSWORD")]
+    pub redis_password: LockableSecret<'a>,
+    #[secret(derived = "AIO_SIGNALING_SECRET")]
+    pub signaling_secret: LockableSecret<'a>,
+    #[secret(derived = "AIO_TALK_INTERNAL_SECRET")]
+    pub talk_internal_secret: LockableSecret<'a>,
+    #[secret(derived = "AIO_TURN_SECRET")]
+    pub turn_secret: LockableSecret<'a>,
 
     #[serde_inline_default(String::from("nextcloudatomic.local"))]
-    nc_domain: String,
+    pub nc_domain: String,
     #[serde_inline_default(false)]
-    onlyoffice_enabled: bool,
+    pub onlyoffice_enabled: bool,
     #[serde_inline_default(false)]
-    collabora_enabled: bool,
+    pub collabora_enabled: bool,
     #[serde_inline_default(false)]
-    talk_enabled: bool,
+    pub talk_enabled: bool,
     #[serde_inline_default(false)]
-    talk_recording_enabled: bool,
+    pub talk_recording_enabled: bool,
     #[serde_inline_default(false)]
-    fulltextsearch_enabled: bool,
+    pub fulltextsearch_enabled: bool,
     #[serde_inline_default(false)]
-    clamav_enabled: bool,
+    pub clamav_enabled: bool,
     #[serde_inline_default(false)]
-    imaginary_enabled: bool,
+    pub imaginary_enabled: bool,
 }
 
-impl NcAioConfig {
+impl<'a> NcAioConfig<'a> {
     pub fn create() -> Self {
-        let cfg: NcAioConfig = serde_json::from_str("{}")
+        let cfg: NcAioConfig<'a> = serde_json::from_str("{}")
             .expect("Failed to create NC Atomic core");
         cfg
     }
-
 }
 
-impl Default for NcAioConfig {
+impl Default for NcAioConfig<'_> {
     fn default() -> Self {
         NcAioConfig::create()
     }
 }
 
-impl CryptoValueProvider<HashMap<String, String>> for NcAioConfig {
-    fn get_crypto_value(&self, crypto: &Crypto) -> Result<HashMap<String, String>> {
-        Ok(HashMap::from([
-            self.db_password.kv(crypto)?,
-            self.fulltextsearch_pw.kv(crypto)?,
-            self.nc_password.kv(crypto)?,
-            self.onlyoffice_secret.kv(crypto)?,
-            self.recording_secret.kv(crypto)?,
-            self.redis_password.kv(crypto)?,
-            self.signaling_secret.kv(crypto)?,
-            self.talk_internal_secret.kv(crypto)?,
-            self.turn_secret.kv(crypto)?
-        ]))
-    }
-}
-
+#[secret]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyDerivationSecrets {
-    pub key_derivation_key_nonce: String,
-    pub key_derivation_key: String,
-    pub key_encryption_key_salt: String,
-    pub ncatomic_version: String
+pub struct NcaConfig<'a> {
+    pub nc_aio: NcAioConfig<'a>,
+    pub ncatomic_version: String,
+    #[secret(encrypted = "NCA_ADMIN_PASSWORD")]
+    pub admin_password: LockableSecret<'a>,
+    
+    #[serde(skip)]
+    masterkey: Option<&'a SecretVec<u8>>,
+    #[serde(serialize_with = "serde_encode", deserialize_with = "serde_decode_sized")]
+    salt: Salt,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NcaConfig {
-    pub nc_aio: NcAioConfig,
-    pub kdk: KeyDerivationSecrets,
-    pub ncatomic_version: String
-}
-
-impl NcaConfig {
-    pub fn new(ncatomic_version: &str, crypto: &Crypto) -> Result<Self> {
+impl<'a> NcaConfig<'a> {
+    pub fn new(ncatomic_version: &str, masterkey: Option<&'a SecretVec<u8>>) -> Result<Self> {
+        let salt = generate_salt();
         Ok(Self {
-            kdk: crypto.try_into()
-                .map_err(|e| anyhow!("Failed to retrieve crypto core: {}", e))?,
+            masterkey,
+            salt,
+            admin_password: LockableSecret::new_empty_locked(),
             nc_aio: NcAioConfig::create(),
             ncatomic_version: ncatomic_version.into()
         })
@@ -109,4 +102,39 @@ impl NcaConfig {
             .map_err(|e| anyhow!("Failed to save configuration: {}", e))?;
         Ok(())
     }
+    
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<NcaConfig<'a>> {
+        serde_json::from_reader(File::open(path)?)
+            .map_err(|e| anyhow!("Failed to load configuration: {}", e))
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.masterkey.is_some()
+    }
+
+    pub fn unlock(&mut self, masterkey: &'a SecretVec<u8>) -> Result<()> {
+        // let masterkey = crypto::create_key_from_pass(self.salt, password);
+        self.unlock_secrets(masterkey)?;
+        self.masterkey = Some(masterkey);
+
+
+        Ok(())
+    }
+
+
+    fn unlock_secrets(&mut self, key: &'a SecretVec<u8>) -> Result<()> {
+        self.admin_password = self.admin_password.unlock(key, self.salt);
+        self.nc_aio.unlock(key, self.salt)
+            .map_err(|e| anyhow!("Failed to unlock: {}", e))
+    }
+
+    pub fn get_masterkey(&self, password: SecretVec<u8>) -> SecretVec<u8> {
+        create_key_from_pass(self.salt, password)
+    }
+    
+    pub fn get_salt(&self) -> Salt {
+        self.salt
+    }
 }
+
+

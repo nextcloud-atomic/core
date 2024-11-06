@@ -1,229 +1,344 @@
-use std::fmt::{Debug, Formatter};
+use core::slice::SlicePattern;
+use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroU32;
 use hex_literal::hex;
 use ring::{aead, digest, hkdf, pbkdf2};
-use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, UnboundKey};
-use ring::digest::{digest, SHA512_OUTPUT_LEN};
+use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, NONCE_LEN, UnboundKey, SealingKey, BoundKey};
+use ring::digest::{digest};
 use ring::hkdf::{HKDF_SHA256};
 use ring::pbkdf2::PBKDF2_HMAC_SHA512;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::ser::SerializeStruct;
-use crate::config::{KeyDerivationSecrets, NcaConfig};
 use anyhow::{anyhow, bail, Result};
+use secrets::{SecretVec};
+use secrets::traits::AsContiguousBytes;
+use serde::de::{Error, Visitor};
+use crate::NCATOMIC_VERSION;
+// reference: https://github.com/neosmart/securestore-rs/blob/master/securestore/src/shared.rs
 
 const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {padding: true};
 const INFO: [u8; 10] = hex!("f0f1f2f3f4f5f6f7f8f9");
 static KEK_CIPHER: &aead::Algorithm = &AES_256_GCM;
 
+const KEY_LENGTH: usize = 512 / 8;
+const SALT_LENGTH: usize = 16;
+
+pub type Salt = [u8; SALT_LENGTH];
+
 pub fn encode(data: &[u8]) -> String {
     base32::encode(B32_ENCODING_ALPHABET, data)
 }
 pub fn decode(data: &str) -> Result<Vec<u8>> {
+    // let t = [0u8, 1u8, 2u8];
+    // let v = Vec::from(t);
     base32::decode(B32_ENCODING_ALPHABET, data)
         .ok_or(anyhow::Error::msg("Failed to decode string"))
 }
 
-#[derive(Clone, Deserialize)]
-pub struct Crypto {
-    locked: bool,
-    ncatomic_version: String,
-    kek: Option<Vec<u8>>,
-    kek_salt: [u8; 16],
-    kdk: Vec<u8>,
-    kdk_nonce: [u8; NONCE_LEN],
+struct ByteStringVisitor;
+impl <'de> Visitor<'de> for ByteStringVisitor {
+    type Value = Vec<u8>;
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("string expected")
+    }
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        Ok(decode(v).map_err(E::custom)?)
+    }
+    fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(decode(v).map_err(E::custom)?)
+    }
+
+    fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(decode(v.as_str()).map_err(E::custom)?)
+    }
 }
-impl Crypto {
+pub fn serde_decode<'de, D: Deserializer<'de>, T: From<Vec<u8>>>(d: D) -> Result<T, D::Error> {
+    let data = d.deserialize_str(ByteStringVisitor)?;
+    Ok(T::from(data))
+}
 
-    pub fn new(ncatomic_version: &str, pass: &str) -> Result<Self> {
-        let kek_salt = Self::generate_salt()?;
+pub fn serde_decode_sized<'de, D: Deserializer<'de>, const L: usize>(d: D) -> Result<[u8; L], D::Error> {
+    let data = d.deserialize_str(ByteStringVisitor)?;
+    let mut result = [0u8; L];
+    result.copy_from_slice(data.as_slice());
+    Ok(result)
+}
 
-        let mut kdk = vec![0u8; SHA512_OUTPUT_LEN];
+pub fn serde_encode<S: Serializer, T: AsRef<[u8]>>(data: T, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(encode(data.as_ref()).as_str())
+}
 
-        let rng = SystemRandom::new();
-        rng.fill(&mut kdk)?;
-        let nonce_bytes = Self::generate_nonce()?;
+// pub fn serde_decode_vec<'de, D: Deserializer<'de>>(data: &str, d: D) -> Result<Vec<u8>, D::Error> {
+//     serde_decode(data, d).map(|b| b.to_vec())
+// }
 
-        let mut crypto = Self::load_unsafe(&encode(&kek_salt), &encode(&kdk), &encode(&nonce_bytes), ncatomic_version, false)?;
-        let kek_secret = Self::create_key_from_pass(kek_salt, pass, KEK_CIPHER.key_len());
-        crypto.lock_unsafe(kek_secret)?;
-        crypto.unlock(pass)?;
-        Ok(crypto)
-    }
+pub struct EncryptionResult {
+    pub data: Vec<u8>,
+    pub nonce: [u8; NONCE_LEN],
+}
 
-    fn generate_nonce() -> Result<[u8; 12]> {
-        let mut nonce_bytes = vec![0u8; NONCE_LEN];
-        let rng = SystemRandom::new();
-        rng.fill(&mut nonce_bytes).map_err(|_| anyhow!("failed to generate random nonce"))?;
-        Ok(nonce_bytes.try_into().map_err(|_| anyhow!("failed to convert nonce"))?)
-    }
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum LockableSecret<'a> {
+    #[serde(rename = "locked")]
+    Locked(LockedSecret),
+    #[serde(skip_deserializing, rename = "locked", serialize_with = "serialize_unlocked")]
+    Unlocked(UnlockedSecret<'a>)
+}
 
-    fn load_unsafe(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncatomic_version: &str, locked: bool) -> Result<Self> {
-        let kek_salt = decode(kek_salt_str)?;
-        let kdk_data = decode(kdk_data_str)?;
-        let kdk_nonce_bytes = decode(kdk_nonce_str)?;
+fn serialize_unlocked<S: Serializer>(unlocked: &UnlockedSecret, s: S) -> Result<S::Ok, S::Error> {
+    unlocked.secret_data.serialize(s)
+}
 
-        Ok(Crypto {
-            ncatomic_version: ncatomic_version.to_string(),
-            locked,
-            kek: None,
-            kek_salt: kek_salt.try_into().map_err(|_| anyhow!("Failed to convert salt"))?,
-            kdk: kdk_data,
-            kdk_nonce: kdk_nonce_bytes.try_into().map_err(|_| anyhow!("Failed to convert nonce"))?,
-        })
-    }
-
-    pub fn load(kek_salt_str: &str, kdk_data_str: &str, kdk_nonce_str: &str, ncatomic_version: &str) -> Result<Self> {
-        Self::load_unsafe(kek_salt_str, kdk_data_str, kdk_nonce_str, ncatomic_version, true)
-    }
+impl<'a> LockableSecret<'a> {
 
     pub fn is_locked(&self) -> bool {
-        return self.locked;
+        match self {
+            LockableSecret::Locked(_) => true,
+            LockableSecret::Unlocked(_) => false
+        }
     }
-    pub fn unlock(&mut self, pass: &str) -> Result<()> {
-        let kek_secret = Self::create_key_from_pass(self.kek_salt, pass, KEK_CIPHER.key_len());
-        let kek = LessSafeKey::new(UnboundKey::new(&KEK_CIPHER, &kek_secret)
-            .map_err(|e| anyhow!("failed to init kek: {e}"))?);
-
-        let nonce = Nonce::try_assume_unique_for_key(&self.kdk_nonce)
-            .map_err(|e| anyhow!("failed to init nonce: {e}"))?;
-        let mut in_out = self.kdk.clone();
-        let decrypted = kek.open_in_place(nonce,
-                                          Aad::from(format!("ncatomic::{}", self.ncatomic_version).as_bytes()),
-                                          &mut in_out).map_err(|e| anyhow!("failed to open kdk: {e}"))?;
-        self.kdk = decrypted.into();
-
-        self.kek = Some(kek_secret.try_into().map_err(|e| anyhow!("failed to store kek_secret: {e}"))?);
-        self.kdk_nonce = Self::generate_nonce()?;
-        self.locked = false;
-        Ok(())
-    }
-
-    pub fn lock(&mut self) -> Result<()> {
-        let kek_bytes = self.kek.clone().ok_or(anyhow!("key encryption key is not set"))?;
-        self.lock_unsafe(kek_bytes)
-    }
-    fn lock_unsafe(&mut self, kek_bytes: Vec<u8>) -> Result<()> {
-        let kek = LessSafeKey::new(UnboundKey::new(&KEK_CIPHER, &*kek_bytes)?);
-
-        let mut nonce_bytes = vec![0u8; NONCE_LEN];
-        let rng = SystemRandom::new();
-        rng.fill(&mut nonce_bytes)?;
-        let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)?;
-
-        kek.seal_in_place_append_tag(nonce,
-                                     Aad::from(format!("ncatomic::{}", self.ncatomic_version).as_bytes()),
-                                     &mut self.kdk).map_err(|e| anyhow!("Failed to encrypt: {e}"))?;
-        self.locked = true;
-        self.kdk_nonce = nonce_bytes.try_into()
-            .map_err(|_| anyhow!("Failed to parse nonce"))?;
-        self.kek = None;
-        Ok(())
-    }
-
-    fn create_key_from_pass(salt: [u8; 16], pass: &str, length: usize) -> Vec<u8> {
-        let mut derived = vec![0u8; length];
-        pbkdf2::derive(PBKDF2_HMAC_SHA512, NonZeroU32::new(100_000).unwrap(), &salt, pass.as_bytes(), &mut derived);
-        derived
-    }
-
-    fn generate_salt() -> Result<[u8; 16]> {
-        let rng = ring::rand::SystemRandom::new();
-        let mut buf = [0; 16];
-        match rng.fill(&mut buf) {
-            Err(_) => bail!("Failed to fill buffer for salt"),
-            Ok(_) => Ok(buf)
+    pub fn unlock(&self, masterkey: &'a SecretVec<u8>, salt: Salt) -> LockableSecret<'a> {
+        match self {
+            LockableSecret::Unlocked(_) => self.clone(),
+            LockableSecret::Locked(locked) => {
+                let unlocked = UnlockedSecret{
+                    secret_data: locked.clone(),
+                    key: masterkey,
+                    salt,
+                };
+                LockableSecret::Unlocked(unlocked)
+            }
         }
     }
 
-    pub fn derive_secret(&self, secret_key: &str) -> Result<Vec<u8>> {
-        if self.locked {
-            bail!("crypto is not unlocked")
+    pub fn lock(&self) -> LockableSecret<'a> {
+
+        let locked = match self {
+            LockableSecret::Locked(secret) => secret,
+            LockableSecret::Unlocked(unlocked) => &unlocked.secret_data
+        }.clone();
+        LockableSecret::Locked(locked)
+    }
+
+    pub fn new_encrypted(key: &'a SecretVec<u8>, plaintext: SecretVec<u8>, salt: Salt) -> Result<LockableSecret<'a>> {
+        let encrypted = encrypt_vec(key, plaintext, salt)?;
+        Ok(LockableSecret::Unlocked(UnlockedSecret{
+            key,
+            salt,
+            secret_data: LockedSecret::ENCRYPTED(EncryptedSecret {
+                source_version: String::from(NCATOMIC_VERSION),
+                data: encrypted.data,
+                nonce: encrypted.nonce
+            })
+        }))
+    }
+
+    pub fn new_derived(key: &'a SecretVec<u8>, secret_id: String, salt: Salt) -> Result<LockableSecret<'a>> {
+        Ok(LockableSecret::Unlocked(UnlockedSecret {
+            key,
+            salt,
+            secret_data: LockedSecret::DERIVED(DerivedSecret {
+                secret_id
+            })
+        }))
+    }
+
+    pub fn new_derived_locked<S: Into<String>>(secret_id: S) -> LockableSecret<'a> {
+        LockableSecret::Locked(LockedSecret::DERIVED(DerivedSecret{
+            secret_id: secret_id.into(),
+        }))
+    }
+    
+    pub fn new_empty_locked() -> LockableSecret<'a> {
+        LockableSecret::Locked(LockedSecret::EMPTY)
+    }
+
+    pub fn secret_value(&self) -> Result<SecretVec<u8>> {
+        match self {
+            LockableSecret::Locked(sec) => {
+                match sec {
+                    LockedSecret::EMPTY => Ok(SecretVec::zero(0)),
+                    _ => bail!("secret is locked")
+                }
+            }
+            LockableSecret::Unlocked(unlocked) => {
+                Ok(unlocked.clone().secret_value()?)
+            }
         }
-        let sha256 = digest(&digest::SHA256, secret_key.as_bytes());
-        let hdkf_salt = hkdf::Salt::new(HKDF_SHA256, sha256.as_ref());
-        match hdkf_salt.extract(&self.kdk).expand(&[&INFO], HkdfMy(42)) {
-            Ok(my_okm) => {
-                let HkdfMy(okm) = my_okm.into();
-                Ok(okm)
-            }
-            Err(_) => bail!("Failed to derive okm")
+    }
+
+
+    pub fn encode_secret_value(&self) -> Result<String> {
+        let val = encode(self.secret_value()?.borrow().iter().as_slice());
+        Ok(val)
+    }
+}
+
+pub fn secret_to_secret_string(sec: &LockableSecret) -> String {
+    match sec.encode_secret_value() {
+        Err(e) => panic!("Failed to get secret value: {:?}", e),
+        Ok(s) => s,
+    }
+}
+
+// impl Serialize for LockableSecret<'_> {
+//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+//     where
+//         S: Serializer
+//     {
+//         if let LockableSecret::Locked(_) = self {
+//             return self.lock().serialize(serializer)
+//         }
+//
+//         self.serialize(serializer)
+//     }
+// }
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LockedSecret {
+    ENCRYPTED(EncryptedSecret),
+    DERIVED(DerivedSecret),
+    EMPTY
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct EncryptedSecret {
+    #[serde(serialize_with = "serde_encode", deserialize_with = "serde_decode")]
+    data: Vec<u8>,
+    #[serde(serialize_with = "serde_encode", deserialize_with = "serde_decode_sized")]
+    nonce: [u8; NONCE_LEN],
+    source_version: String
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct DerivedSecret {
+    secret_id: String,
+}
+
+impl<'a> LockedSecret {
+    pub fn unlock(&self, key: &'a SecretVec<u8>, salt: Salt) -> UnlockedSecret<'a> {
+        UnlockedSecret{
+            key,
+            salt,
+            secret_data: self.clone()
         }
     }
 
 }
 
-impl TryInto<KeyDerivationSecrets> for &Crypto {
-    type Error = anyhow::Error;
+#[derive(Clone, PartialEq, Debug)]
+pub struct UnlockedSecret<'a> {
+    secret_data: LockedSecret,
+    key: &'a SecretVec<u8>,
+    salt: Salt,
+}
 
-    fn try_into(self) -> Result<KeyDerivationSecrets, Self::Error> {
-        let locked_crypto = match self.locked {
-            true => self.clone(),
-            false => {
-                let mut crypto = self.clone();
-                crypto.lock()?;
-                crypto
+impl UnlockedSecret<'_> {
+    
+    pub fn secret_value(self) -> Result<SecretVec<u8>> {
+        match self.secret_data {
+            LockedSecret::DERIVED(secret) => {
+                Ok(derive_secret(self.key, secret.secret_id.clone())?)
+            },
+            LockedSecret::ENCRYPTED(secret) => {
+                Ok(decrypt_vec(self.key, Vec::from(secret.data.clone()), secret.nonce, self.salt)?)
+            },
+            LockedSecret::EMPTY => {
+                Ok(SecretVec::<u8>::zero(0))
             }
-        };
-        Ok(KeyDerivationSecrets {
-            key_derivation_key_nonce: encode(&locked_crypto.kdk_nonce),
-            key_encryption_key_salt: encode(&locked_crypto.kek_salt),
-            key_derivation_key: encode(&locked_crypto.kdk),
-            ncatomic_version: locked_crypto.ncatomic_version.to_string()
-        })
+        }
     }
 }
 
-impl TryFrom<KeyDerivationSecrets> for Crypto {
-    type Error = anyhow::Error;
-    fn try_from(config: KeyDerivationSecrets) -> Result<Self, Self::Error> {
-        Crypto::load(config.key_encryption_key_salt.as_str(),
-                     config.key_derivation_key.as_str(),
-                     config.key_derivation_key_nonce.as_str(),
-                     config.ncatomic_version.as_str())
-    }
+
+pub fn generate_salt() -> Salt {
+    let rng = ring::rand::SystemRandom::new();
+    let mut buf = [0; 16];
+    rng.fill(&mut buf).expect("Failed to fill buffer for salt");
+    buf
+}
+fn generate_nonce() -> [u8; NONCE_LEN] {
+    let mut nonce_bytes = vec![0u8; NONCE_LEN];
+    let rng = SystemRandom::new();
+    rng.fill(&mut nonce_bytes).expect("failed to generate random nonce");
+    nonce_bytes.try_into().expect("failed to convert nonce")
 }
 
-impl Serialize for Crypto {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        let copy = match &self.locked {
-            true => self.clone(),
-            false => {
-                let mut c = self.clone();
-                // TODO: Error handling
-                c.lock().unwrap();
-                c
-            }
-        };
+fn encrypt_vec(key: &SecretVec<u8>, data: SecretVec<u8>, salt: Salt) -> Result<EncryptionResult> {
+    let nonce_bytes = generate_nonce();
+    let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)
+        .map_err(|e| anyhow!("Failed to generate nonce: {e:?}"))?;
+    let encryption_key = LessSafeKey::new(
+        UnboundKey::new(&KEK_CIPHER, &*key.borrow())
+            .map_err(|e| anyhow!("Failed to create unbound key: {e:?}"))?);
 
-        let mut json = serializer.serialize_struct("crypto", 5)?;
-        json.serialize_field("ncatomic_version", &copy.ncatomic_version)?;
-        json.serialize_field("locked", &copy.locked)?;
-        let none: Option<Vec<u8>> = None;
-        json.serialize_field("kek", &none)?;
-        json.serialize_field("kek_salt", &encode(&copy.kek_salt))?;
-        json.serialize_field("kdk", &encode(&copy.kdk))?;
-        json.serialize_field("kdk_nonce", &encode(&copy.kdk_nonce))?;
-        json.end()
-
-    }
+    let mut ciphertext = vec![0u8; data.len()];
+    ciphertext.copy_from_slice(data.borrow().as_slice());
+    encryption_key.seal_in_place_append_tag(
+        nonce,
+        Aad::from([format!("ncatomic::{NCATOMIC_VERSION}").as_bytes(), salt.as_slice()].concat()),
+        &mut ciphertext
+    )
+        .map_err(|e| anyhow!("Failed to encrypt: {e}"))?;
+    Ok(EncryptionResult{
+        data: ciphertext,
+        nonce: nonce_bytes,
+    })
 }
 
-impl Debug for Crypto {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Crypto()")
-    }
+fn decrypt_vec(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt) -> Result<SecretVec<u8>> {
+    let mut enc = decrypt_vec_unsafe(key, data, nonce_bytes, salt)?;
+    Ok(SecretVec::<u8>::new(enc.len(), |s| {
+        s.copy_from_slice(enc.as_slice());
+    }))
 }
 
-impl From<NcaConfig> for Crypto {
-    fn from(cfg: NcaConfig) -> Self {
-        Self::load(cfg.kdk.key_encryption_key_salt.as_str(), cfg.kdk.key_derivation_key.as_str(),
-                   cfg.kdk.key_derivation_key_nonce.as_str(), cfg.ncatomic_version.as_str())
-            .expect("Failed to load crypto from configuration")
+fn decrypt_vec_unsafe(key: &SecretVec<u8>, data: Vec<u8>, nonce_bytes: [u8; NONCE_LEN], salt: Salt) -> Result<Vec<u8>> {
 
-    }
+    let decryption_key = LessSafeKey::new(
+        UnboundKey::new(&KEK_CIPHER, &*key.borrow())
+            .map_err(|e| anyhow!("{e:?}"))?);
+    let nonce = Nonce::try_assume_unique_for_key(&nonce_bytes)
+        .map_err(|e| anyhow!("{e:?}"))?;
+    let mut in_out = data;
+    let decrypted = decryption_key.open_in_place(
+        nonce,
+        Aad::from([format!("ncatomic::{NCATOMIC_VERSION}").as_bytes(), salt.as_slice()].concat()),
+        &mut in_out,
+    ).map_err(|e| anyhow!("Failed to decrypt: {e}"))?;
+    Ok(decrypted.to_vec())
 }
 
+fn derive_secret(key: &SecretVec<u8>, secret_id: String) -> Result<SecretVec<u8>> {
+    let sha256 = digest(&digest::SHA256, secret_id.as_bytes());
+    let hdkf_salt = hkdf::Salt::new(HKDF_SHA256, sha256.as_ref());
+    let mut okm: Vec<u8> = match hdkf_salt.extract(&*key.borrow()).expand(&[&INFO], HkdfMy(42)) {
+        Ok(my_okm) => {
+            let HkdfMy(okm) = my_okm.into();
+            okm
+        }
+        Err(_) => bail!("Failed to derive okm")
+    };
+    assert_eq!(42, okm.len(), "derived secret must be of length 42, was {}!", okm.len());
+    let ciphertext = SecretVec::<u8>::new(42, |s| {
+        s.copy_from_slice(&mut okm);
+    });
+    Ok(ciphertext)
+}
+
+pub fn create_key_from_pass(salt: [u8; 16], pass: SecretVec<u8>) -> SecretVec<u8> {
+    let length = KEK_CIPHER.key_len();
+    SecretVec::<u8>::new(length, |mut s| {
+        pbkdf2::derive(PBKDF2_HMAC_SHA512, NonZeroU32::new(100_000).unwrap(), &salt, pass.borrow().as_slice(), &mut s);
+    })
+}
 
 #[derive(Debug, PartialEq)]
 struct HkdfMy<T: core::fmt::Debug + PartialEq>(T);
@@ -241,76 +356,19 @@ impl From<hkdf::Okm<'_, HkdfMy<usize>>> for HkdfMy<Vec<u8>> {
         Self(r)
     }
 }
-pub trait CryptoUser<'a> {
-    fn set_crypto(&'a mut self, crypto: Option<&'a Crypto>);
 
-}
-
-pub trait CryptoValueProvider<T> {
-    fn get_crypto_value(&self, crypto: &Crypto) -> Result<T>;
+pub trait Unlockable<'a> {
+    fn unlock(&mut self, key: &'a SecretVec<u8>, salt: Salt) -> std::result::Result<(), String>;
 }
 
 
 #[cfg(test)]
 mod tests {
+    use core::slice::SlicePattern;
     use super::*;
     use std::borrow::Borrow;
     use std::str;
-
-    #[test]
-    fn create_crypto() {
-        let crypto = Crypto::new("0.0.0", "test")
-            .expect("crypto could not be initialized");
-        assert_eq!(crypto.locked, false);
-        let derived = crypto.derive_secret("abcdef").expect("failed to derive secret");
-        println!("{}", encode(&derived));
-    }
-
-    #[test]
-    fn unique_nonce() {
-        let pass = "test";
-        let mut crypto = Crypto::new("0.0.0", pass)
-            .expect("crypto could not be intialized");
-        let first_nonce = crypto.kdk_nonce;
-        crypto.lock().expect("crypto could not be locked");
-        crypto.unlock(pass).expect("crypto could not be unlocked");
-        assert_ne!(first_nonce, crypto.kdk_nonce, "nonce was not regenerated after locking/unlocking");
-    }
-
-    #[test]
-    fn deterministic_secrets() {
-        let pass = "test";
-        let secret_key = "abcdef";
-        let mut crypto = Crypto::new("0.0.0", pass)
-            .expect("crypto could not be initialized");
-        println!("kdk: {}, nonce: {}", encode(&crypto.kdk), encode(&crypto.kdk_nonce));
-        let secret = crypto.derive_secret(secret_key)
-            .expect("secret could not be derived");
-        crypto.lock().expect("crypto could not be locked");
-        crypto.unlock(pass).expect("crypto could not be unlocked");
-        println!("kdk: {}, nonce: {}", encode(&crypto.kdk), encode(&crypto.kdk_nonce));
-        assert_eq!(crypto.derive_secret(secret_key).expect("could not derive secret"), secret);
-    }
-
-    #[test]
-    fn de_serialization() {
-        let pass = "test";
-        let secret_key = "abcdef";
-        let crypto = Crypto::new("0.0.0", pass)
-            .expect("could not initialize crypto");
-        let secret1 = crypto.derive_secret(secret_key)
-            .expect("could not derive secret");
-        let serialized: KeyDerivationSecrets = crypto.borrow().try_into()
-            .expect("could not serialize crypto");
-        let mut crypto2: Crypto = serialized.try_into()
-            .expect("could not deserialize crypto");
-        crypto2.unlock(pass).expect("could not unlock crypto");
-        let secret2 = crypto2.derive_secret(secret_key)
-            .expect("could not derive secret");
-
-        assert_eq!(secret1, secret2);
-
-    }
+    use aes_siv::aead::Buffer;
 
     #[test]
     fn test_en_decode() {
@@ -321,6 +379,111 @@ mod tests {
             .expect("failed to convert decoded data to utf8 string");
         println!("{decoded_str}");
         assert_eq!(text, decoded.as_slice())
+    }
+
+    #[test]
+    fn test_de_serialization_encryption() {
+        let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
+        let salt = generate_salt();
+        
+        let plaintext = SecretVec::new(6, |mut s| {
+            let mut v = "abcdef".as_bytes();
+            s.copy_from_slice(&mut v)
+        });
+
+        let sec = LockableSecret::new_encrypted(&masterkey, plaintext.clone(), salt)
+            .expect("Failed to create encrypted secret");
+        let serialized = serde_json::to_string(&sec).expect("failed to serialize to json");
+        print!("{serialized}\n");
+        let deserialized: LockableSecret = serde_json::from_str(&serialized).expect("Failed to deserialize lockale secret from json");
+
+        assert!(deserialized.is_locked(), "secret not locked after deserialization!");
+
+        let unlocked = deserialized.unlock(&masterkey, salt);
+        assert!(!unlocked.is_locked(), "secret locked after unlocking!");
+        let secret_value = unlocked.secret_value().expect("failed to retriee secret value");
+        assert_eq!(plaintext.borrow(), secret_value.borrow());
+    }
+
+    #[test]
+    fn test_de_serialization_derivation() {
+        let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
+        let salt = generate_salt();
+        
+        let secret_id = "TEST_1".to_string();
+
+        let sec = LockableSecret::new_derived(&masterkey, secret_id, salt)
+            .expect("Failed to create derived secret");
+        let serialized = serde_json::to_string(&sec).expect("failed to serialize to json");
+        print!("{serialized}\n");
+        let deserialized: LockableSecret = serde_json::from_str(&serialized).expect("Failed to deserialize lockale secret from json");
+
+        assert!(deserialized.is_locked(), "secret not locked after deserialization!");
+
+        let unlocked = deserialized.unlock(&masterkey, salt);
+        assert!(!unlocked.is_locked(), "secret locked after unlocking!");
+        let secret_value = unlocked.secret_value().expect("failed to retriee secret value");
+        assert_eq!(sec.secret_value().unwrap().borrow(), secret_value.borrow());
+    }
+
+    #[test]
+    fn test_de_encryption() {
+        let plaintext = SecretVec::new(6, |mut s| {
+            let mut v = "abcdef".as_bytes();
+            s.copy_from_slice(&mut v)
+        });
+        
+        println!("plaintext length: {} | {}", plaintext.len(), plaintext.borrow().len());
+        let salt = generate_salt();
+
+        let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
+
+        let encrypted = encrypt_vec(&masterkey, plaintext, salt)
+            .expect("Failed to encrypt data");
+        println!("cipher text length: {}", encrypted.data.len());
+        let decrypted = decrypt_vec_unsafe(&masterkey, encrypted.data, encrypted.nonce, salt)
+            .expect("Failed to decrypt data");
+
+        assert_eq!("abcdef", decrypted.iter().map(|&c| char::from(c)).collect::<String>());
+
+    }
+    
+    #[test]
+    fn unique_nonce() {
+        let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
+        let salt = generate_salt();
+
+        let plaintext = SecretVec::new(6, |mut s| {
+            let mut v = "abcdef".as_bytes();
+            s.copy_from_slice(&mut v)
+        });
+        let encrypted_1 = encrypt_vec(&masterkey, plaintext, salt)
+            .expect("Failed to encrypt data");
+        let nonce_1 = encrypted_1.nonce;
+        let decrypted = decrypt_vec(&masterkey, encrypted_1.data, encrypted_1.nonce, salt)
+            .expect("Failed to decrypt data");
+        let encrypted_2 = encrypt_vec(&masterkey, decrypted, salt)
+            .expect("Failed to encrypt data");
+        
+        assert_ne!(encrypted_1.nonce, encrypted_2.nonce);
+    }
+
+    #[test]
+    fn deterministic_secrets() {
+        let masterkey = SecretVec::<u8>::random(KEK_CIPHER.key_len());
+        let salt = generate_salt();
+
+        let derived_1 = LockableSecret::new_derived(&masterkey, "TEST_1".to_string(), salt)
+            .expect("Failed to derive secret");
+        
+        let derived_2 = LockableSecret::new_derived(&masterkey, "TEST_1".to_string(), salt)
+            .expect("Failed to derive secret");
+        
+        let derived_3 = LockableSecret::new_derived(&masterkey, "TEST_2".to_string(), salt)
+            .expect("Failed to derive secret");
+        
+        assert_eq!(derived_1.secret_value().unwrap(), derived_2.secret_value().unwrap());
+        assert_ne!(derived_1.secret_value().unwrap(), derived_3.secret_value().unwrap());
     }
 
 }

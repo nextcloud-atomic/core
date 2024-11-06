@@ -1,0 +1,13 @@
+[package]
+name = "activate"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+errors = {workspace = true}
+axum = {workspace = true}
+core = {workspace = true}
+tera = {workspace = true}
+tempdir = "0.3.7"
+secrets = {workspace = true}
+kvp = {workspace = true}

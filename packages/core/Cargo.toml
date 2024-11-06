@@ -7,7 +7,7 @@ version.workspace = true
 serde = { workspace = true }
 serde_json = {  workspace = true }
 serde-inline-default = {workspace = true}
-ring = "0.17.8"
+ring = { version = "0.17.8" }
 aead = "0.6.0-rc.0"
 digest = "0.11.0-pre.9"
 hkdf = "0.13.0-pre.4"
@@ -16,3 +16,10 @@ anyhow = {workspace = true}
 base32 = "0.5.1"
 hex = "0.4.3"
 hex-literal = "0.4.1"
+tera = {workspace = true}
+aes-siv = "0.7.0"
+secrets = { workspace = true }
+strum = {workspace = true}
+strum_macros = {workspace = true}
+kvp = {path = "../kvp" }
+macros = {path = "../macros" }
