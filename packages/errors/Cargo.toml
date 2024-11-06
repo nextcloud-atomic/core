@@ -1,0 +1,8 @@
+[package]
+name = "errors"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+
+axum = {workspace = true}

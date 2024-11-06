@@ -19,29 +19,28 @@ use futures_util::StreamExt;
 #[cfg(feature = "web")]
 use {
     wasm_bindgen::prelude::wasm_bindgen,
-    web_sys::{window, Window},
     web_sys::js_sys::JsString,
+    web_sys::{window, Window},
 };
 
 #[cfg(feature = "server")]
 use {
+    bollard::container::ListContainersOptions,
+    bollard::models::ContainerSummary,
+    bollard::Docker,
+    caddy::CaddyClient,
     core::config::{NcAioConfig, NcaConfig},
     core::crypto::{Crypto, CryptoValueProvider},
-    std::time::Duration,
-    std::process::exit,
-    ncatomic_core::templating::render_template,
+    hyper::Method,
     sd_notify::notify,
     sd_notify::NotifyState,
-    bollard::Docker,
-    bollard::models::ContainerSummary,
-    bollard::container::ListContainersOptions,
-    caddy::CaddyClient,
-    hyper::Method
+    std::process::exit,
+    std::time::Duration
 };
 #[cfg(not(feature = "server"))]
-use {
-   instant::Duration
-};
+use instant::Duration;
+#[cfg(feature = "server")]
+use core::templating::render_template;
 
 #[cfg(feature = "web")]
 fn set_server_address(launcher: LaunchBuilder<()>) -> LaunchBuilder<()> {
@@ -54,21 +53,22 @@ fn main() {
     // let mut launcher = LaunchBuilder::new(app);
     // launcher = set_server_address(launcher);
     // launcher.launch();
-    let config_path = PathBuf::from(env::var("NCA_CONFIG_TARGET")
-                                        .expect("NCA_CONFIG_TARGET must be set"));
+    // let config_path = PathBuf::from(env::var("NCA_CONFIG_TARGET")
+    //                                     .expect("NCA_CONFIG_TARGET must be set"));
 
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async {
-            if config_path.join("ncatomic.json").exists() {
-                caddy_enable_nextcloud().await.expect("Failed to enable nextcloud page");
-                notify_service_successful().expect("Failed to notify systemd service completion");
-            } else {
-                caddy_enable_activation_page().await.expect("Failed to configure caddy");
-            }
-        });
+    // tokio::runtime::Builder::new_current_thread()
+    //     .enable_all()
+    //     .build()
+    //     .unwrap()
+    //     .block_on(async {
+    //         if config_path.join("ncatomic.json").exists() {
+    //             caddy_enable_nextcloud().await.expect("Failed to enable nextcloud page");
+    //             notify_service_successful().expect("Failed to notify systemd service completion");
+    //             terminate().await.expect("Failed to terminate service");
+    //         } else {
+    //             caddy_enable_activation_page().await.expect("Failed to configure caddy");
+    //         }
+    //     });
     let cfg = Config::default()
         .addr(SocketAddr::new(
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
@@ -107,7 +107,7 @@ fn render_aio_config(cfg: NcAioConfig, crypto: &Crypto, aio_template_path: PathB
 
 #[server]
 async fn activate_ncatomic(user_pass: String) -> Result<(), ServerFnError> {
-let crypto = Crypto::new(ncatomic_core::NCATOMIC_VERSION, &user_pass).map_err(ServerFnError::new)?;
+    let crypto = Crypto::new(ncatomic_core::NCATOMIC_VERSION, &user_pass).map_err(ServerFnError::new)?;
     let config = NcaConfig::new(ncatomic_core::NCATOMIC_VERSION, &crypto).map_err(ServerFnError::new)?;
 
     let config_template_base_path = PathBuf::from(env::var("NCA_CONFIG_SOURCE")
@@ -185,15 +185,22 @@ async fn check_aio_started() -> Result<ContainerStatusResult, ServerFnError> {
                 s.names.clone().unwrap_or(vec!()).join(", ")
         ))
     }).collect();
-    let is_ready = containers.iter().any(|container| {
-        println!("{} - {}",
-                 container.names.clone().unwrap_or_default().first()
-                        .unwrap_or(&String::from("unknown")),
-                 container.state.clone().unwrap());
-        container.state.clone().unwrap_or("unknown".into()) == "running" &&
-            container.names.clone().unwrap_or_default().iter()
-                .any(|s| s.starts_with("/nextcloud-aio-nextcloud-aio-apache"))
-    });
+    let required_container_names = [
+        String::from("nextcloud-aio-apache"),
+        String::from("nextcloud-aio-nextcloud")
+    ];
+    let is_ready = required_container_names.iter()
+        .all(|name| containers.iter()
+            .any(|container| {
+                println!("{} - {}",
+                         container.names.clone().unwrap_or_default().first()
+                             .unwrap_or(&String::from("unknown")),
+                         container.state.clone().unwrap());
+                container.state.clone().unwrap_or("unknown".into()) == "running" &&
+                    container.names.clone().unwrap_or_default().iter()
+                        .any(|s| s.contains(name))
+            })
+    );
     println!("isReady? {is_ready}");
     Ok(ContainerStatusResult {
         ready: is_ready,
@@ -251,6 +258,7 @@ pub fn app() -> Element {
                     Ok(result) => {
                         ready = result.ready;
                         containers_status.set(Some(result));
+                        println!("container status: {containers_status:?}");
                         if ready {
                             match caddy_enable_nextcloud().await {
                                 Ok(_) => {
@@ -329,7 +337,6 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Read;
-    use std::path::PathBuf;
     use tera::{Context, Tera};
     use core::config::NcAioConfig;
     use core::crypto::{Crypto, CryptoValueProvider};

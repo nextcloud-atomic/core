@@ -1,0 +1,9 @@
+[package]
+name = "ui"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+dioxus = "0.5"
+dioxus-ssr = "0.5"
+model = {workspace = true}

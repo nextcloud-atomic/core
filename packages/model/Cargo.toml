@@ -1,0 +1,8 @@
+[package]
+name = "model"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+serde = { version = "1.0.210", features = ["derive"] }
+sysinfo = {workspace = true}

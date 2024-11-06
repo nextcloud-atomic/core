@@ -17,9 +17,10 @@ WORKDIR /app
 FROM builder AS devcontainer
 
 # SSH
-RUN apk update && apk add openssh
+RUN apk update && apk add openssh rsync
 COPY devel/ssh_key.pub /root/.ssh/authorized_keys
 RUN chmod 0600 /root/.ssh/authorized_keys
+RUN rustup toolchain install nightly && rustup target add x86_64-unknown-linux-musl
 
 COPY resource /resource
 
