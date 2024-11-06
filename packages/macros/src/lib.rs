@@ -5,7 +5,6 @@ use syn::{parse_macro_input, DeriveInput, Item};
 
 mod kvp;
 mod secret;
-mod util;
 
 #[proc_macro_derive(KeyValueProvider, attributes(kvp))]
 pub fn key_value_provider_derive(input: TokenStream) -> TokenStream {

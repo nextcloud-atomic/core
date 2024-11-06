@@ -1,9 +1,7 @@
 #![feature(proc_macro_quote)]
-use proc_macro::{TokenStream, quote as macro_quote, Ident};
-use std::fmt::format;
+use proc_macro::{TokenStream};
 use quote::{format_ident, quote};
-use proc_macro2::Span;
-use syn::{parse_macro_input, ItemStruct, LitStr, Item, DeriveInput, DataStruct, Fields, Field};
+use syn::{LitStr, DeriveInput, Field};
 use syn::__private::quote;
 
 pub(crate) fn get_kv_from_field(field: &Field) -> Result<Option<proc_macro2::TokenStream>, String> {

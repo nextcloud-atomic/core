@@ -14,7 +14,7 @@ fn test_secret() {
     struct Test<'a> {
         #[secret(derived = "A")]
         a: LockableSecret<'a>,
-        
+
         #[secret(encrypted = "B")]
         b: LockableSecret<'a>,
     }
@@ -39,24 +39,24 @@ fn test_secret() {
 // #[test]
 // #[should_panic(expected = "no method named `to_map` found for struct `test_secret_without_kvp::Test` in the current scope")]
 // fn test_secret_without_kvp() {
-// 
+//
 //     #[secret]
 //     #[derive(Serialize, Deserialize)]
 //     struct Test<'a> {
 //         #[secret(derived = "A")]
 //         a: LockableSecret<'a>,
-// 
+//
 //         #[secret(encrypted = "B")]
 //         b: LockableSecret<'a>,
 //     }
-// 
+//
 //     let mut test: Test = serde_json::from_str("{}").unwrap();
-// 
+//
 //     match test.b {
 //         LockableSecret::Locked(LockedSecret::EMPTY) => {},
 //         _ => panic!("unexpected secret type (should be empty): {:?}", test.b),
 //     }
-// 
+//
 //     let key = secrets::SecretVec(32);
 //     let salt = core::crypto::generate_salt();
 //     test.unlock(&key, salt);

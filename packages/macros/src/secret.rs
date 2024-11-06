@@ -1,8 +1,6 @@
-use std::process::id;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{parse_quote, GenericParam, ItemStruct, LitStr, TypeParam};
-use syn::CapturedParam::Lifetime;
+use syn::{parse_quote, ItemStruct, LitStr};
 use syn::spanned::Spanned;
 
 pub(crate) fn expand_struct(mut item: ItemStruct) -> proc_macro::TokenStream {
