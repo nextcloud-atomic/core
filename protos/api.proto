@@ -1,0 +1,23 @@
+syntax = "proto3";
+package api;
+
+message StatusResponse {
+  uint32 status = 1;
+  string statusText = 2;
+}
+
+
+service JournalLogStream {
+  rpc Tail(LogFilter) returns (stream LogMessage) {};
+}
+
+message LogFilter {
+  map<string, string> fields = 1;
+  optional string namespace = 2;
+}
+
+message LogMessage {
+  map<string, string> fields = 1;
+  string message = 2;
+  optional string namespace = 3;
+}

@@ -1,0 +1,17 @@
+[package]
+name = "grpc-journal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+prost = "0.13"
+tonic = { version = "0.12", default-features = true }
+tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros"] }
+tokio-stream = "0.1.17"
+hyper-util = "0.1.10"
+tower = "0.5.2"
+systemd = { version = "0.10.0", features = ["default", "serde", "systemd_v245"] }
+
+[build-dependencies]
+tonic-build = { version = "0.12"}
