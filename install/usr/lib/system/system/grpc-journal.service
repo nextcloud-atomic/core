@@ -1,0 +1,15 @@
+[Unit]
+Description=Provides journald logs as grpc service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/grpc-journal
+ProtectSystem=strict
+ProtectHome=true
+ExecPaths=/usr/bin/grpc-journal
+ReadOnlyPaths=/var/log/journal
+PrivateTmp=true
+LogNamespace=ncatomic
+
+[Install]
+WantedBy=multi-user.target
