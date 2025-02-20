@@ -1,0 +1,33 @@
+[package]
+name = "nca-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { workspace = true }
+
+axum-extra = { workspace = true, features = ["form", "typed-routing"]}
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread", "fs"] }
+tokio-util = { version = "0.7", default-features = false, features = ["io"] }
+tower-livereload = { version = "0.9" }
+grpc-journal = { version = "0.1.0", path = "../grpc-journal" }
+tonic = { version = "0.12", default-features = true }
+tower = { version = "0.5.2", features = ["steer"] }
+tonic-web = { version = "0.12" }
+libsystemd = {workspace = true }
+nca-system-api = {path = "../nca-system-api", features = ["backend"] }
+tower-http = { version = "0.6", features = ["fs"] }
+notify = "8.0"
+
+http = "1.2.0"
+serde = { workspace = true, features = ["derive"] }
+nca-error = {path = "../nca-error"}
+dioxus = { version = "0.6", default-features = true, features = ["fullstack"] }
+
+[[bin]]
+name = "nca-backend"
+path = "src/main.rs"
+
+
+[features]
+mock = []
