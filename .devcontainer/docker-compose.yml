@@ -1,0 +1,30 @@
+services:
+
+  development:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    volumes:
+      - ..:/workspace:cached
+      # Give access to ssh keys on the host (Is there a better way to do this?)
+      - ~/.ssh:/home/vscode/.ssh:cached
+      # We need this so docker in docker works
+      - /var/run/docker.sock:/var/run/docker.sock
+      - target:/workspace/target # Set target as a volume for performance.
+      - ../target:/host-target
+      # Uncomment the next line to improve performance when using node.
+      - node_modules:/workspace/crates/nca-frontend/node_modules
+
+    # Overrides default command so things don't shut down after the process ends.
+    #entrypoint: /usr/local/bin/bash
+    command: sleep infinity
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    working_dir: /workspace
+
+volumes:
+  target:
+  node_modules:
