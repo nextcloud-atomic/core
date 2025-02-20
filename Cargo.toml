@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+
+members = ["crates/*"]
+
+# Remove debug from the exe for faster compile times
+# https://corrode.dev/blog/tips-for-faster-rust-compile-times/#turn-off-debuginfo
+[profile.dev]
+debug = 0
+strip = "debuginfo"
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"
+
+[workspace.dependencies]
+axum = "0.7"
+axum-extra = "0.9.0"
+serde = "1"
+libsystemd = "0.7"
