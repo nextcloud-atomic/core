@@ -6,23 +6,28 @@ edition = "2021"
 [dependencies]
 
 prost = "0.13"
-tonic = { version = "0.12", default-features = true }
-tonic-web = "0.12"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
-tokio-stream = "0.1"
-tower = "0.4"
-hyper-util = "0.1.10"
-tower-http = {version = "0.5", features = ["cors"]}
-systemd = { version = "0.10.0", features = ["default", "serde", "systemd_v245"] }
-once_cell = "1.20.3"
+tonic = { version = "0.12", default-features = false }
+nca-error = {path = "../nca-error"}
+
+tonic-web = { version = "0.12", optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+tower = { version = "0.4", optional = true }
+hyper-util = { version = "0.1.10", optional = true }
+tower-http = {version = "0.5", features = ["cors"], optional = true}
+systemd = { version = "0.10.0", features = ["default", "serde", "systemd_v245"], optional = true }
+futures-util = { version = "0.3.31", optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.12"}
+tonic-build = "0.12"
 
-#[lib]
-#name = "grpc-journal"
-#path = "src/lib.rs"
+[features]
+default = ["api", "types"]
+types = ["tonic/codegen"]
+api = ["tonic/default", "dep:tonic-web", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:hyper-util", "dep:tower-http", "dep:systemd", "dep:futures-util"]
+mock = []
 
 [[bin]]
 name = "dummy-logstream"
 path = "src/bin/dummy_logstream.rs"
+required-features = ["mock", "api", "types"]
