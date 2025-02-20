@@ -1,0 +1,28 @@
+[package]
+name = "nca-frontend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+daisy_rsx = { version = "0.1.14" }
+dioxus = { version = "0.6", features = ["macro", "html", "signals", "web", "hooks"] }
+#grpc-journal = { path = "../grpc-journal", default-features = false, features = ["types"] }
+#tonic = { version = "0.12", default-features = false, features = ["codegen"] }
+dioxus-logger = "0.6"
+nca-system-api = { version = "0.1.0", path = "../nca-system-api", default-features = false, features = [] }
+reqwest = { version = "0.12.12", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+tracing-wasm = "0.2"
+web-sys = "0.3"
+tokio = { version = "1.43", features = ["macros", "sync"] }
+async-std = "1.13"
+serde_json = "1.0.138"
+dioxus-heroicons = "0.4"
+
+[lib]
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]

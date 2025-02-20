@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "start": "parcel watch _grpc_client.ts",
+    "release": "rm -rf dist/*; parcel build style.ts _grpc_client.ts && ! [ -f dist/*.js ] || mv dist/[!_]*.js dist/[!_]*.js.map assets/js/; ! [ -f dist/*.css ] || mv dist/*.css dist/*.css.map assets/css/",
+    "protoc": "npx protoc --ts_out ./grpc-journal --proto_path ../grpc-journal/protos ../grpc-journal/protos/api.proto"
+  },
+  "devDependencies": {
+    "@parcel/transformer-sass": "^2.13.3",
+    "@protobuf-ts/grpcweb-transport": "^2.9.4",
+    "@protobuf-ts/plugin": "^2.9.4",
+    "parcel": "^2.13.3"
+  }
+}
