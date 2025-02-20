@@ -1,0 +1,14 @@
+[package]
+name = "nca-error"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { workspace = true }
+http = "1.2.0"
+zbus_systemd = "0"
+libsystemd = {workspace = true}
+tonic = { version = "0.12", optional = true }
+
+[features]
+tonic = ["dep:tonic"]
