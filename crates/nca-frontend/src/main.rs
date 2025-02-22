@@ -14,7 +14,7 @@ use dioxus_heroicons::{Icon, mini::Shape};
 use nca_system_api::types::ServiceStatus;
 
 fn main() {
-    tracing_wasm::set_as_global_default();
+    // tracing_wasm::set_as_global_default();
     launch(App)
 }
 

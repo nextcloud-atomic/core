@@ -24,8 +24,28 @@ impl LogMessage {
         }
     }
 
+    fn syslog_id(&self) -> String {
+        let syslog_id_fallback = "unknown".to_string();
+        self.fields.get("SYSLOG_IDENTIFIER").unwrap_or(&syslog_id_fallback).to_string()
+    }
+
+    fn container_name(&self, strip_prefix: Option<&str>, strip_suffix: Option<&str>) -> Option<String> {
+        let mut container_name = self.fields.get("CONTAINER_NAME")?.to_string();
+        if let Some(prefix) = strip_prefix {
+            if let Some(stripped) = container_name.strip_prefix(prefix) {
+                container_name = stripped.to_string();
+            }
+        }
+        if let Some(suffix) = strip_suffix {
+            if let Some(stripped) = container_name.strip_suffix(suffix) {
+                container_name = stripped.to_string();
+            }
+        }
+        Some(container_name)
+    }
+
     fn render_inner_html(&self) -> String {
-        if let Some(container) = self.fields.get("_CONTAINER_NAME") {
+        if let Some(container) = self.container_name(Some("nc-aio_nextcloud-aio-"), Some("_1")) {
             format!("[{}]::<b>{}</b>:: {}", self.systemd_unit(), container, self.message)
         } else {
             format!("[{}]:: {}", self.systemd_unit(), self.message)
@@ -67,12 +87,12 @@ pub fn Logs() -> Element {
 
     rsx! {
         div {
-            class: "logstream mockup-code box-border flex-1 min-h-20vh overflow-y-scroll m-2",
+            class: "logstream mockup-code box-border flex-1 min-h-20vh overflow-y-scroll overflow-x-auto m-2",
             for (i, log) in logs.iter().enumerate() {
                 pre {
                     "data-prefix": "{i+1}",
                     "[{log.systemd_unit()}]=>",
-                    if let Some(container) = log.fields.get("_CONTAINER_NAME") {
+                    if let Some(container) = log.container_name(Some("nc-aio_nextcloud-aio-"), Some("_1")) {
                         b {
                             "{container}::"
                         }
