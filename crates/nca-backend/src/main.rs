@@ -54,7 +54,7 @@ async fn main() {
         .fallback_service(ServeDir::new("public"))
         .layer(Extension(config.clone()));
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "watch")]
     {
         let livereload = LiveReloadLayer::new();
         let reloader = livereload.reloader();
@@ -62,7 +62,7 @@ async fn main() {
 
         let mut watcher = notify::recommended_watcher(move |_| reloader.reload())
             .expect("Failed to setup file watcher");
-        watcher.watch(Path::new("/workspace/public"), notify::RecursiveMode::Recursive)
+        watcher.watch(Path::new("public"), notify::RecursiveMode::Recursive)
             .expect("Failed to watch /public path");
     }
     

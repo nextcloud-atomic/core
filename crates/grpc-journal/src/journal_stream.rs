@@ -58,7 +58,9 @@ impl JournalLogStream for JournalLogStreamService {
                     message: "hello world".to_string(),
                     namespace: None
                 };
-                tx.blocking_send(Ok(msg)).unwrap();
+                if let Err(e) = tx.blocking_send(Ok(msg)) {
+                    panic!("Error while sending message: {e:?}");
+                }
                 sleep(Duration::from_secs(5));
             }
         });
