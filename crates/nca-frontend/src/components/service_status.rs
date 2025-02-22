@@ -18,6 +18,7 @@ pub struct ServiceStatusProps {
     on_deactivating: Option<Element>,
     on_api_error: Option<Element>,
     error_action: Option<Element>,
+    success_action: Option<Element>,
 }
 
 pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
@@ -79,18 +80,30 @@ pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
                     Some(ServiceStatus::DEACTIVATING) => {props.on_deactivating.unwrap_or(props.on_failed)},
                     None => {props.on_api_error.unwrap_or(fallback_error_elem)}
                 }
-                if let Some(error_action) = props.error_action {
-                    match service_status() {
-                        Some(ServiceStatus::FAILED) | Some(ServiceStatus::DEACTIVATING) => {
-                            rsx!{
+                match service_status() {
+                    Some(ServiceStatus::FAILED) | Some(ServiceStatus::DEACTIVATING) => {
+                        match props.error_action {
+                            Some(action) => rsx!{
                                 div {
                                     class: "justify-end card-action",
-                                    {error_action}
+                                    {action}
                                 }
-                            }
-                        },
-                        _ => {rsx!()}
-                    }
+                            },
+                            None => rsx!()
+                        }
+                    },
+                    Some(ServiceStatus::ACTIVE) => {
+                        match props.success_action {
+                            Some(action) => rsx!{
+                                div {
+                                    class: "justify-end card-action",
+                                    {action}
+                                }
+                            },
+                            None => rsx!()
+                        }
+                    },
+                    _ => {rsx!()}
                 }
             },
         }

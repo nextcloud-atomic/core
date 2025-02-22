@@ -97,6 +97,12 @@ fn App() -> Element {
                             "!!!DELETES ALL DATA!!!"
                         }
                     }
+                }),
+                success_action: Some(rsx! {
+                    button {
+                        class: "btn btn-primary",
+                        "Open Nextcloud"
+                    }
                 })
 
             }
