@@ -3203,7 +3203,6 @@ dependencies = [
  "notify",
  "serde",
  "tokio",
- "tokio-util",
  "tonic",
  "tonic-web",
  "tower 0.5.2",

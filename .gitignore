@@ -4,3 +4,5 @@ node_modules
 .parcel-cache
 /public
 .idea/
+mkosi.crt
+mkosi.key
