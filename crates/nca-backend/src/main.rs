@@ -2,10 +2,18 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+#[cfg(feature = "mock-systemd")]
+use {
+    std::sync::{Arc, Mutex},
+    nca_system_api::systemd::types::ServiceStatus
+};
+use axum::Router;
+use axum::routing::post;
 use dioxus::prelude::*;
+
 mod config;
 mod api_routes;
+mod middleware;
 
 use {
     axum::{extract::Extension, routing::get, ServiceExt},
@@ -19,9 +27,11 @@ use {
     tower_http::services::ServeDir,
 };
 
-use notify;
 use notify::Watcher;
-use nca_system_api::types::ServiceStatus;
+use nca_caddy::CaddyClient;
+use nca_caddy::config::builders::create_nca_setup_server_json;
+use crate::api_routes::{activate_endpoint_nextcloud, configure_nextcloud_atomic};
+use crate::middleware::require_setup_not_complete;
 
 #[tokio::main]
 async fn main() {
@@ -44,6 +54,11 @@ async fn main() {
         get(api_routes::service_status)
     };
 
+    let mut setup_router = Router::new()
+        .route("/configure", post(configure_nextcloud_atomic))
+        .route("/caddy/endpoint/enable/nextcloud", post(activate_endpoint_nextcloud))
+        .route("/service/*name", service_status_route);
+
     let mut app = tonic::service::Routes::new(tonic_web::enable(
         JournalLogStreamServer::new(
             JournalLogStreamService::new(false, true))
@@ -51,9 +66,22 @@ async fn main() {
         .prepare()
         .into_axum_router();
 
-    app = app.route("/api/service/*name", service_status_route)
+    #[cfg(feature = "insecure")]
+    {
+        app = app.layer(tower_http::cors::CorsLayer::permissive());
+        setup_router = setup_router.layer(tower_http::cors::CorsLayer::permissive());
+    }
+
+    app = app
+        .route_layer(axum::middleware::from_fn(require_setup_not_complete))
+        .nest_service("/api/setup", setup_router)
         .fallback_service(ServeDir::new("public"))
         .layer(Extension(config.clone()));
+
+    #[cfg(feature = "insecure")]
+    {
+        app = app.layer(tower_http::cors::CorsLayer::permissive());
+    }
 
     #[cfg(feature = "watch")]
     {
@@ -65,6 +93,17 @@ async fn main() {
             .expect("Failed to setup file watcher");
         watcher.watch(Path::new("public"), notify::RecursiveMode::Recursive)
             .expect("Failed to watch /public path");
+    }
+    
+    #[cfg(not(feature = "mock-caddy"))]
+    if let Some(socket_addr) = config.caddy_admin_socket {
+        println!("Setting up caddy...");
+        let caddy = CaddyClient::new(&socket_addr)
+            .expect("Failed to initialize caddy client");
+        let servers_cfg = serde_json::to_string(&HashMap::from([("nca-web", create_nca_setup_server_json())]))
+            .expect("Failed to generate caddy server config");
+        caddy.set_caddy_servers(servers_cfg).await
+            .expect("Failed to configure caddy");
     }
     
     println!("Listening at {}", config.address);

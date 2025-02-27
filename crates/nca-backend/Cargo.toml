@@ -16,13 +16,20 @@ tower = { version = "0.5.2", features = ["steer"] }
 tonic-web = { version = "0.12" }
 libsystemd = {workspace = true }
 nca-system-api = {path = "../nca-system-api", features = ["backend"] }
-tower-http = { version = "0.6", features = ["fs"] }
+grpc-occ = {path = "../grpc-occ", features = ["default"]}
+nca-caddy = {path = "../nca-caddy"}
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 notify = "8.0"
 
 http = "1.2.0"
 serde = { workspace = true, features = ["derive"] }
 nca-error = {path = "../nca-error"}
 dioxus = { version = "0.6", default-features = true, features = ["fullstack"] }
+serde_json = "1.0.139"
+rand = { version = "0.9" }
+paspio = "1.0"
+url = "2.5"
+
 
 [[bin]]
 name = "nca-backend"
