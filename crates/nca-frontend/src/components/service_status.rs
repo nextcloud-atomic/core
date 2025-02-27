@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 use dioxus::prelude::*;
-use dioxus_heroicons::Icon;
-use dioxus_heroicons::mini::Shape;
+use dioxus_free_icons::{Icon, icons::hi_solid_icons};
 use dioxus_logger::tracing;
-use nca_system_api::types::ServiceStatus;
+use nca_system_api::systemd::types::ServiceStatus;
 use crate::base_url;
+use crate::components::nc_startup::NcStartup;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct ServiceStatusProps {
@@ -23,11 +23,11 @@ pub struct ServiceStatusProps {
 
 pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
 
-    let mut service_status: Signal<Option<nca_system_api::types::ServiceStatus>> = use_signal(|| None);
+    let mut service_status: Signal<Option<nca_system_api::systemd::types::ServiceStatus>> = use_signal(|| None);
     let mut service_name: Signal<String> = use_signal(|| props.service_name.clone());
     let nc_aio_status_future = use_coroutine(move |rx: UnboundedReceiver<bool>| async move {
         to_owned![service_status];
-        let request_url = format!("{}/api/service/{}.service", base_url(), service_name.peek());
+        let request_url = format!("{}/api/setup/service/{}.service", base_url(), service_name.peek());
         loop {
             tracing::info!("requesting {}", request_url);
             let status = match reqwest::get(&request_url).await {
@@ -35,7 +35,7 @@ pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
                     tracing::error!("Failed to retrieve service status: {:?}", e);
                     None
                 },
-                Ok(response) => match response.json::<nca_system_api::types::ServiceStatus>().await {
+                Ok(response) => match response.json::<nca_system_api::systemd::types::ServiceStatus>().await {
                     Err(e) => {
                         tracing::error!("Failed to parse service status response: {:?}", e);
                         None
@@ -44,7 +44,7 @@ pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
                 }
             };
             service_status.set(status);
-            async_std::task::sleep(Duration::from_secs(1)).await;
+            async_std::task::sleep(Duration::from_secs(5)).await;
         };
     });
     
@@ -53,8 +53,9 @@ pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
             class: "card-title",
             Icon {
                 class: "text-error",
-                icon: Shape::ExclamationCircle,
-                size: 30
+                icon: hi_solid_icons::HiExclamationCircle,
+                height: 30,
+                width: 30
             },
             "Internal Server Error while fetching status of {props.service_name}" 
         }

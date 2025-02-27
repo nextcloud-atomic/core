@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::thread::sleep;
 use std::time::Duration;
 use dioxus::document::{Eval, EvalError, Script, Stylesheet};
@@ -6,19 +7,17 @@ use dioxus::prelude::*;
 use dioxus_logger::tracing;
 use serde::Deserialize;
 use nca_frontend::layout::{Layout, SideBar};
-use nca_frontend::{assets, ServiceStatus};
-use nca_frontend::components::Logs;
+use nca_frontend::{assets, base_url, NcConfig, ServiceStatus};
+use nca_frontend::components::{NcStartup, Logs};
 use web_sys::window;
-use dioxus_heroicons::{Icon, mini::Shape};
-
-use nca_system_api::types::ServiceStatus;
+use reqwest::Client;
+use serde_json::json;
+use nca_system_api::systemd::types::ServiceStatus;
 
 fn main() {
     // tracing_wasm::set_as_global_default();
     launch(App)
 }
-
-
 
 async fn run_js_eval(eval: Eval) -> Result<serde_json::Value, EvalError> {
     eval.await
@@ -37,6 +36,8 @@ async fn receive_js_messages(sender: tokio::sync::mpsc::Sender<String>, mut eval
 #[component]
 fn App() -> Element {
 
+    let mut configuration_complete = use_signal(|| false);
+    let error: Signal<Option<String>> = use_signal(|| None);
 
     rsx! {
 
@@ -52,61 +53,35 @@ fn App() -> Element {
             selected_item: SideBar::Activation,
             enable_sidebar: false,
             breadcrumbs: vec![],
-            ServiceStatus {
-                service_name: "nextcloud-all-in-one",
-                on_activating: rsx! {
-                    h2 {
-                        class: "card-title",
-                        span {
-                            class: "loading loading-spinner loading-xl text-accent"
-                        },
-                        "Nextcloud is still starting ...",
-                    }
-                    p {
-                        "This might take a while"
-                    }
+            if let Some(err) = error.read().deref() {
+                div {
+                    role: "alert",
+                    class: "alert alert-error mx-auto mt-4 mb-8 max-w-xl",
+                    "{err}"
+                }
+            },
+            ul {
+                class: "steps",
+                li {
+                    class: "step step-primary",
+                    "Configure"
                 },
-                on_active: rsx! {
-                    h2 {
-                        class: "card-title",
-                        Icon {
-                            class: "text-accent",
-                            icon: Shape::CheckCircle,
-                            size: 30
-                        },
-                        "Nextcloud has started successfully"
-                    }
-                },
-                on_failed: rsx! {
-                    h2 {
-                        class: "card-title",
-                        Icon {
-                            class: "text-error",
-                            icon: Shape::ExclamationCircle,
-                            size: 30
-                        },
-                        "Nextcloud failed to start"
-                    }
-                },
-                error_action: Some(rsx! {
-                    button {
-                        class: "btn btn-error",
-                        "Reset and restart Nextcloud"
-                        b {
-                            // class: "text-accent",
-                            "!!!DELETES ALL DATA!!!"
-                        }
-                    }
-                }),
-                success_action: Some(rsx! {
-                    button {
-                        class: "btn btn-primary",
-                        "Open Nextcloud"
-                    }
-                })
-
+                li {
+                    class: "step",
+                    class: if configuration_complete() { "step-primary" },
+                    "Install Nextcloud"
+                }
+            },
+            if configuration_complete() {
+                NcStartup {
+                    error
+                }
+            } else {
+                NcConfig {
+                    configuration_complete,
+                    error
+                }
             }
-            Logs {}
-        }
+        },
     }
 }
