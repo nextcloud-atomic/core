@@ -1,0 +1,33 @@
+{
+  "http": {
+    "servers": {
+      "test": {
+        "listen": [
+          "0.0.0.0:80"
+        ],
+        "routes": [
+          {
+            "terminal": true,
+            "handle": [
+              {
+                "handler": "headers",
+                "response": {
+                  "set": {
+                    "Content-Type": [
+                      "text/plain"
+                    ]
+                  }
+                }
+              },
+              {
+                "handler": "static_response",
+                "body": "site2",
+                "status_code": 200
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
