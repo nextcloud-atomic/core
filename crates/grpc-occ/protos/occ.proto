@@ -1,0 +1,22 @@
+syntax = "proto3";
+package occ;
+
+message Command {
+  repeated string arguments = 1;
+}
+
+message CommandOutput {
+  OutputType type = 1;
+  optional string message = 2;
+  optional int32 exit_code = 3;
+}
+
+enum OutputType {
+  STDOUT = 0;
+  STDERR = 1;
+  EXIT = 2;
+}
+
+service Occ {
+  rpc Exec(Command) returns (stream CommandOutput);
+}
