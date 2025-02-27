@@ -8,5 +8,7 @@ build:
     ( cd /workspace/crates/nca-frontend && tailwind-extra -i ./input.css -o ./assets/css/tailwind.css )
     ( WORKSPACE="$(pwd)" && cd crates/nca-frontend && npm run release && dx bundle -r && rm -rf "${WORKSPACE}/public" && cp -a "${WORKSPACE}/target/dx/nca-frontend/release/web/public" "${WORKSPACE}/" )
     cargo build --release --bin nca-backend
+    cargo build --release --package grpc-occ --bin occ
+    cargo build --release --package grpc-occ --bin occd
 tailwind:
     cd /workspace/crates/nca-frontend && tailwind-extra -i ./input.css -o ./assets/css/tailwind.css --watch
