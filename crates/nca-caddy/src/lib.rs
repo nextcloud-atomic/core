@@ -1,4 +1,3 @@
-pub mod endpoints;
 pub mod config;
 
 use std::fmt::Debug;
@@ -24,32 +23,9 @@ impl CaddyClient {
             // client: Client::new()
         })
     }
-    // pub async fn load_config(&self, caddy_config: String, config_path: Option<String>) -> Result<String, NcpError>{
-    //     let uri = Uri::new(&self.socket_path, &("/load/".to_owned() + &config_path.unwrap_or("".to_string())));
-    //     let req = Request::builder()
-    //         .uri(uri)
-    //         .body(Full::from(caddy_config))?;
-    //     let mut response = self.client.request(req).await?;
-    //     if !response.status().is_success() {
-    //         return Err(NcpError::from(format!(
-    //             "Failed to load caddy core (received status: {})",
-    //             response.status().as_str())))
-    //     }
-    //     let mut buf = BufWriter::new(Vec::new());
-    //     while let Some(frame_result) = response.frame().await {
-    //         let frame = frame_result?;
-    //         if let Some(segment) = frame.data_ref() {
-    //             buf.write_all(segment.iter().as_slice())?;
-    //         }
-    //     }
-    //     let result = String::from_utf8(buf.into_inner()?)?;
-    //     Ok(result)
-    // }
-    // Reference implementation: https://github.com/tokio-rs/axum/blob/main/examples/unix-domain-socket/src/main.rs
-    
     #[cfg(feature = "mock")]
     pub async fn load_config(&self, caddy_config: String, config_path: Option<String>) -> Result<String> {
-        return Ok("{}".to_string());
+        Ok("{}".to_string())
     }
     
     #[cfg(not(feature = "mock"))]
@@ -235,7 +211,7 @@ mod tests {
         }
         {
             // let result = caddy.write_config("site2".to_string(), "apps/srv0/servers/http/".to_string()).await;
-            let result = caddy.change_config(Method::POST, Some(cfg), Some("/apps".to_string())).await;
+            let result = caddy.change_config(Method::POST, Some(cfg), "/apps".to_string()).await;
             assert!(result.is_ok(), "Failed to load caddy config: {:?}", result.expect_err("unknown err"));
             println!("result: {}", result.unwrap());
         }

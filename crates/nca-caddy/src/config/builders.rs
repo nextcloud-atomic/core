@@ -6,6 +6,11 @@ type HmacSha256 = Hmac<Sha256>;
 
 pub fn create_nextcloud_server_json(extra_address: String, lb_cookie_secret: String) -> (Server, String) {
 
+    let mut hosts = vec!["localhost".to_string(), "nextcloudatomic.local".to_string()];
+    if !hosts.contains(&extra_address) {
+        hosts.push(extra_address);
+    }
+    
     (
         Server {
             listen: vec!["0.0.0.0:443".to_string()],
@@ -13,7 +18,7 @@ pub fn create_nextcloud_server_json(extra_address: String, lb_cookie_secret: Str
                 Route {
                     r#match: Some(vec![
                         Match{
-                            host: Some(vec!["localhost".to_string(), "nextcloudatomic.local".to_string(), extra_address])
+                            host: Some(hosts)
                         }
                     ]),
                     handle: vec![
