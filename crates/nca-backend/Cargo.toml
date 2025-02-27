@@ -31,5 +31,11 @@ path = "src/main.rs"
 
 [features]
 default = []
-mock = ["grpc-journal/mock"]
+mock-all = ["mock-caddy", "mock-journal", "mock-systemd", "mock-occ", "mock-fs"]
+mock-journal = ["grpc-journal/mock"]
+mock-caddy = ["nca-caddy/mock"]
+mock-systemd = []
+mock-occ = ["grpc-occ/mock"]
+mock-fs = []
+insecure = []
 watch = []

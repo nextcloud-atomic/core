@@ -15,7 +15,7 @@ use {
         journal_stream::JournalLogStreamService,
         api::journal_log_stream_server::JournalLogStreamServer
     },
-    nca_system_api::api::sd_notify,
+    nca_system_api::systemd::api::sd_notify,
     tower_http::services::ServeDir,
 };
 
@@ -28,7 +28,7 @@ async fn main() {
     let config = config::Config::new();
 
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock-systemd")]
     let service_status_route = {
         get(api_routes::mock::service_status)
             .with_state(api_routes::mock::ServiceMockState {
@@ -38,7 +38,8 @@ async fn main() {
                 ]),
             })
     };
-    #[cfg(not(feature = "mock"))]
+
+    #[cfg(not(feature = "mock-systemd"))]
     let service_status_route = {
         get(api_routes::service_status)
     };

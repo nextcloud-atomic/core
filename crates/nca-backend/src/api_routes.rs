@@ -10,8 +10,8 @@ use nca_system_api::types::ServiceStatus;
 pub struct ServiceName {
     name: String,
 }
-#[cfg(not(feature = "mock"))]
-pub async fn service_status(ServiceName{ name: svc_name }: ServiceName) -> Result<Json<ServiceStatus>, NcaError> {
+#[cfg(not(feature = "mock-systemd"))]
+pub(crate) async fn service_status(ServiceName{ name: svc_name }: ServiceName) -> Result<Json<ServiceStatus>, NcaError> {
     #[cfg(debug_assertions)]
     eprintln!("Retrieving service status for {}", svc_name);
     let status = get_service_status(svc_name).await?;
@@ -25,7 +25,7 @@ pub mod mock {
     use axum::extract::State;
     use axum::Json;
     use nca_error::NcaError;
-    use nca_system_api::types::ServiceStatus;
+    use nca_system_api::systemd::types::ServiceStatus;
     use crate::api_routes::ServiceName;
 
 
@@ -41,7 +41,7 @@ pub mod mock {
 
         let mut counter = state.service_status_request_count.lock().expect("mutex was poisoned");
         *counter += 1;
-        let requests_until_startup = 30;
+        let requests_until_startup = 5;
         if *counter < requests_until_startup {
             eprintln!("Services will be active in {} requests", requests_until_startup - *counter);
         } else {
