@@ -1,0 +1,17 @@
+{
+  admin unix//run/caddy/admin.sock {
+    origins localhost
+  }
+  persist_config off
+}
+
+localhost:443 {
+    bind 0.0.0.0
+    tls internal {
+        on_demand
+    }
+
+    reverse_proxy * {
+        to host.containers.internal:3000
+    }
+}

@@ -1,0 +1,21 @@
+services:
+  fake-nextcloud:
+    image: docker.io/traefik/whoami
+    ports:
+      - "127.0.0.1:1080:80"
+  caddy:
+    image: docker.io/caddy:2
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - ./caddy-admin/:/run/caddy
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "127.0.0.1:443:443"
+      - "127.0.0.1:80:80"
+    command: sh -c 'touch /run/caddy/admin.sock && chmod ugo+rwx /run/caddy/admin.sock && caddy run --environ -c /etc/caddy/Caddyfile'
+    extra_hosts:
+      - "host.containers.internal:127.0.0.1"
+    network_mode: host
+
+#  docker run --user "0:$(id -g)" --rm -p 127.0.0.1:80:80 -d --name caddy --cap-add=NET_ADMIN -v "$TMPDIR"/Caddyfile:/etc/caddy/Caddyfile:ro -v "$TMPDIR/caddy":/run/caddy caddy:2 caddy run --environ -c /etc/caddy/Caddyfile
