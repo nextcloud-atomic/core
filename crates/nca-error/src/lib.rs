@@ -19,6 +19,7 @@ pub enum NcaError {
     NotActivated(String),
     IOError(String),
     CryptoError(String),
+    NotReady(String)
 }
 
 // Allow the use of "{}" format specifier
@@ -37,6 +38,7 @@ impl fmt::Display for NcaError {
             NcaError::IOError(_) => "Input/Output Err",
             NcaError::SystemdError(_) => "Systemd Err",
             NcaError::FaultySetup(_) => "Faulty Setup Err",
+            NcaError::NotReady(_) => "Not Ready Err",
         };
         write!(f, "{}: {}", error_prefix, cause)
     }
@@ -62,6 +64,7 @@ impl NcaError {
                 format!("The path '{}' is invalid. {}", path, msg).to_string(),
             NcaError::SystemdError(msg) => format!("Systemd Err: {}", msg).to_string(),
             NcaError::FaultySetup(msg) => format!("Faulty Setup Err: {}", msg).to_string(),
+            NcaError::NotReady(msg) => format!("Not Ready Err: {}", msg).to_string(),
         }
     }
 
@@ -89,23 +92,23 @@ impl NcaError {
 // So that errors get printed to the browser?
 impl IntoResponse for NcaError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
+        match self {
             NcaError::FaultySetup(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             NcaError::SystemdError(_) | NcaError::Generic(_) 
             | NcaError::Unexpected(_) | NcaError::ServerConfiguration(_) 
             | NcaError::IOError(_) | NcaError::CryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             NcaError::WeakPassword(_, _) | NcaError::InvalidPath(_, _) 
-            | NcaError::NotActivated(_) | NcaError::MissingConfig(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-        };
+            | NcaError::NotActivated(_) | NcaError::MissingConfig(_) | NcaError::NotReady(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+        }.into_response()
 
-        format!("status = {}, message = {}", status, error_message).into_response()
+        // format!("status = {}, message = {}", status, error_message).into_response()
     }
 }
 
 #[cfg(feature = "tonic")]
 use tonic::Status;
 #[cfg(feature = "tonic")]
-impl From<NcAtomicError> for Status {
+impl From<NcaError> for Status {
     fn from(value: NcaError) -> Self {
 
         match value {
@@ -118,7 +121,17 @@ impl From<NcAtomicError> for Status {
             NcaError::NotActivated(_) => Status::failed_precondition(value.to_string()),
             NcaError::IOError(_) => Status::internal(value.to_string()),
             NcaError::CryptoError(_) => Status::internal(value.to_string()),
+            NcaError::SystemdError(_) => Status::internal(value.to_string()),
+            NcaError::FaultySetup(_) => Status::internal(value.to_string()),
+            NcaError::NotReady(_) => Status::failed_precondition(value.to_string()),
         }
+    }
+}
+
+#[cfg(feature = "tonic")]
+impl From<Status> for NcaError {
+    fn from(value: Status) -> Self {
+        NcaError::new_io_error(format!("Error during grpc call (status {}): {}", value.code(), value.message()))
     }
 }
 
