@@ -87,17 +87,19 @@ pub fn Logs() -> Element {
 
     rsx! {
         div {
-            class: "logstream mockup-code box-border flex-1 min-h-20vh overflow-y-scroll overflow-x-auto m-2",
-            for (i, log) in logs.iter().enumerate() {
-                pre {
-                    "data-prefix": "{i+1}",
-                    "[{log.systemd_unit()}]=>",
-                    if let Some(container) = log.container_name(Some("nc-aio_nextcloud-aio-"), Some("_1")) {
-                        b {
-                            "{container}::"
-                        }
-                    },
-                    " {log.message}"
+            class: "mx-4 flex-1 min-h-20vh box-border mb-4",
+            div {
+                class: "logstream mockup-code box-border h-full overflow-y-scroll overflow-x-auto mx-auto text-xs",
+                for (i, log) in logs.iter().enumerate() {
+                    pre {
+                        "data-prefix": "{i+1}",
+                        "[{log.systemd_unit()}]",
+                        if let Some(container) = log.container_name(Some("nc-aio_nextcloud-aio-"), Some("_1")) {
+                            "::",
+                            b { "{container}" }
+                        },
+                        "=> {log.message}"
+                    }
                 }
             }
         }

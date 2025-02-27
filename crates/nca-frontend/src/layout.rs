@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 use dioxus_logger::tracing;
 use crate::assets;
 use reqwest;
-use nca_system_api::types;
+use nca_system_api::systemd::types;
 use web_sys::{window, Document};
 // use web_sys::wasm_bindgen::JsValue;
 // use web_sys::wasm_bindgen::prelude::wasm_bindgen;
@@ -97,7 +97,7 @@ pub fn Layout(props: NcaLayoutProps) -> Element {
             ),
             sidebar_header: rsx!(
                 div {
-                    class: "flex aspect-square size-8 items-center justify-center rounded-lg bg-neutral text-neutral-content",
+                    class: "flex aspect-square size-8 items-center justify-center rounded-lg bg-neutral text-neutral-content container",
                     svg {
                         xmlns: "http://www.w3.org/2000/svg",
                         width: "24",
@@ -161,45 +161,45 @@ pub struct BaseLayoutProps {
 #[component]
 pub fn BaseLayout(props: BaseLayoutProps) -> Element {
     rsx!(
-        head {
-            title {
-                "{props.title}"
-            }
-            meta {
-                charset: "utf-8"
-            }
-            meta {
-                "http-equiv": "X-UA-Compatible",
-                content: "IE=edge"
-            }
-            meta {
-                name: "viewport",
-                content: "width=device-width, initial-scale=1"
-            }
-            for href in &props.stylesheets {
-                link {
-                    rel: "stylesheet",
-                    href: "{href}",
-                    "type": "text/css"
-                }
-            }
-            if let Some(js_href) = props.js_href {
-                script {
-                    "type": "module",
-                    src: "{js_href}"
-                }
-            }
-            if let Some(fav_icon_src) = props.fav_icon_src {
-                link {
-                    rel: "icon",
-                    "type": "image/svg+xml",
-                    href: "{fav_icon_src}"
-                }
-            }
-        }
-        body {
+        // head {
+        //     title {
+        //         "{props.title}"
+        //     }
+        //     meta {
+        //         charset: "utf-8"
+        //     }
+        //     meta {
+        //         "http-equiv": "X-UA-Compatible",
+        //         content: "IE=edge"
+        //     }
+        //     meta {
+        //         name: "viewport",
+        //         content: "width=device-width, initial-scale=1"
+        //     }
+        //     for href in &props.stylesheets {
+        //         link {
+        //             rel: "stylesheet",
+        //             href: "{href}",
+        //             "type": "text/css"
+        //         }
+        //     }
+        //     if let Some(js_href) = props.js_href {
+        //         script {
+        //             "type": "module",
+        //             src: "{js_href}"
+        //         }
+        //     }
+        //     if let Some(fav_icon_src) = props.fav_icon_src {
+        //         link {
+        //             rel: "icon",
+        //             "type": "image/svg+xml",
+        //             href: "{fav_icon_src}"
+        //         }
+        //     }
+        // }
+        // body {
             div {
-                class: "flex h-screen overflow-hidden",
+                class: "flex flex-col h-screen overflow-hidden",
                 if props.enable_sidebar {
                     nav {
                         id: "sidebar",
@@ -276,6 +276,6 @@ pub fn BaseLayout(props: BaseLayoutProps) -> Element {
                     }
                 }
             }
-        }
+        // }
     )
 }
