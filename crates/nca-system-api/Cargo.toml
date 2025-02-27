@@ -8,8 +8,11 @@ edition = "2021"
 zbus_systemd = { version = "0", features = ["systemd1"], optional = true }
 libsystemd = {workspace = true, optional = true}
 nca-error = {path = "../nca-error", optional = true}
+grpc-occ = {path = "../grpc-occ", optional = true}
 serde = { workspace = true, features = ["derive"] }
+tonic = { version = "0.12.3", optional = true }
+users = { version = "0.11", optional = true}
 
 [features]
 default = ["backend"]
-backend = ["zbus_systemd", "libsystemd", "nca-error"]
+backend = ["zbus_systemd", "libsystemd", "nca-error", "grpc-occ", "tonic", "nca-error/tonic", "users"]
