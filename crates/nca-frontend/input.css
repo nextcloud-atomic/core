@@ -1,4 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/*@plugin "@tailwind/typography";*/
 @plugin "daisyui";
+
+label.input:focus, label.input:focus-within {
+    border-color: transparent;
+}

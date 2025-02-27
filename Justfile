@@ -1,3 +1,5 @@
+serve-frontend:
+    cd crates/nca-frontend && dx serve --features mock-backend
 watch-frontend:
     while true; do ( set -x; cd crates/nca-frontend && npm run release && rm -rf /workspace/target/dx/nca-frontend/release/web && mold -run dx bundle -r && rm -rf /workspace/public/* && cp -a /workspace/target/dx/nca-frontend/release/web/public/* /workspace/public/); inotifywait -r -e close_write -e attrib -e move -e create -e delete crates/nca-frontend || break; done;
 watch-backend:
