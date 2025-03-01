@@ -87,9 +87,9 @@ pub fn Logs() -> Element {
 
     rsx! {
         div {
-            class: "mx-4 flex-1 min-h-20vh box-border mb-4",
+            class: "mx-4 flex-1 min-h-0 box-border mb-4",
             div {
-                class: "logstream mockup-code box-border h-full overflow-y-scroll overflow-x-auto mx-auto text-xs",
+                class: "logstream mockup-code box-border h-full overflow-y-scroll overflow-x-auto mx-auto text-xs min-h-0",
                 for (i, log) in logs.iter().enumerate() {
                     pre {
                         "data-prefix": "{i+1}",

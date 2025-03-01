@@ -238,7 +238,7 @@ pub fn BaseLayout(props: BaseLayoutProps) -> Element {
                 }
                 main {
                     id: "main-content",
-                    class: "flex-1 flex flex-col",
+                    class: "flex-1 flex flex-col h-full",
                     header {
                         class: "flex items-center p-4 border-b border-base-300",
                         if props.enable_sidebar {
@@ -271,7 +271,7 @@ pub fn BaseLayout(props: BaseLayoutProps) -> Element {
                         {props.header}
                     }
                     section {
-                        class: "flex flex-col flex-1 overflow-y-auto",
+                        class: "flex flex-col flex-1 min-h-0",
                         {props.children}
                     }
                 }

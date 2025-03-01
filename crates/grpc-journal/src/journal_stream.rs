@@ -98,11 +98,11 @@ pub async fn get_log_stream(current_user: bool, system: bool, namespace: Option<
             Ok(reader) => reader
         };
         // TODO: Fix filtering by fields and reenable
-        // for (k, v) in filter_fields.iter() {
-        //     if let Err(e) = reader.match_add(k, v.as_str()) {
-        //         eprintln!("Error adding filter: {e:?}");
-        //     }
-        // }
+        for (k, v) in filter_fields.iter() {
+            if let Err(e) = reader.match_add(k, v.as_str()) {
+                eprintln!("Error adding filter: {e:?}");
+            }
+        }
 
         reader.seek(JournalSeek::Tail).expect("Couldn't seek to end of journal");
         if let Err(e) = reader.previous().map_err(|e| NcaError::IOError(e.to_string())) {
