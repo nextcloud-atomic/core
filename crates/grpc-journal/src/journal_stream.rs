@@ -184,7 +184,7 @@ pub async fn get_log_stream(current_user: bool, system: bool, namespace: Option<
             if let Err(e) = reader.wait(None) {
                 eprintln!("Unexpected error while waiting for journal entries: {e:?}");
             }
-        }
+        };
     });
 
     rx
