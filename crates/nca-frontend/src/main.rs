@@ -5,14 +5,20 @@ use std::time::Duration;
 use dioxus::document::{Eval, EvalError, Script, Stylesheet};
 use dioxus::prelude::*;
 use dioxus_logger::tracing;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use nca_frontend::layout::{Layout, SideBar};
-use nca_frontend::{assets, base_url, NcConfig, ServiceStatus};
+use nca_frontend::{assets, base_url, NextcloudConfig, ServiceStatus};
 use nca_frontend::components::{NcStartup, Logs};
 use web_sys::window;
 use reqwest::Client;
 use serde_json::json;
+use strum::IntoEnumIterator;
+use strum::EnumIter;
 use nca_system_api::systemd::types::ServiceStatus;
+use nca_frontend::ConfigStep;
+use nca_frontend::configure_credentials::{CredentialsConfig, CredentialsConfigTotp};
+use nca_frontend::configure_storage::CfgSetupStorage;
+use nca_frontend::configure_welcome::CfgWelcome;
 
 fn main() {
     // tracing_wasm::set_as_global_default();
@@ -33,11 +39,23 @@ async fn receive_js_messages(sender: tokio::sync::mpsc::Sender<String>, mut eval
     }
 }
 
+
 #[component]
 fn App() -> Element {
 
-    let mut configuration_complete = use_signal(|| false);
+    let mut config_status = use_signal(|| ConfigStep::Welcome);
+    let mut config_is_valid = use_signal(|| false);
     let error: Signal<Option<String>> = use_signal(|| None);
+
+    let mut config_next = move || {
+        config_is_valid.set(false);
+        config_status.set(config_status().next().expect("Unexpected error: Next config step is undefined"))
+    };
+
+    let mut config_back = move || {
+        config_is_valid.set(false);
+        config_status.set(config_status().previous().expect("Unexpected error: Next config step is undefined"))
+    };
 
     rsx! {
 
@@ -61,25 +79,61 @@ fn App() -> Element {
                 }
             },
             ul {
-                class: "steps",
+                class: "steps min-h-24",
                 li {
                     class: "step step-primary",
-                    "Configure"
+                    "Welcome"
                 },
                 li {
                     class: "step",
-                    class: if configuration_complete() { "step-primary" },
+                    class: if config_status() >= ConfigStep::ConfigurePasswords { "step-primary" },
+                    "Setup Credentials"
+                },
+                li {
+                    class: "step",
+                    class: if config_status() >= ConfigStep::ConfigureNextcloud { "step-primary" },
+                    "Setup Nextcloud"
+                },
+                li {
+                    class: "step",
+                    class: if config_status() >= ConfigStep::ConfigureDisks { "step-primary" },
+                    "Setup Storage"
+                },
+                li {
+                    class: "step",
+                    class: if config_status() == ConfigStep::Startup { "step-primary" },
                     "Install Nextcloud"
                 }
             },
-            if configuration_complete() {
+
+            if config_status() == ConfigStep::Startup {
                 NcStartup {
                     error
                 }
             } else {
-                NcConfig {
-                    configuration_complete,
-                    error
+                if config_status() == ConfigStep::Welcome {
+                    CfgWelcome {
+                        on_continue: move |_| config_next(),
+                        error
+                    }
+                } else if config_status() == ConfigStep::ConfigurePasswords {
+                    CredentialsConfig {
+                        on_continue: move |_| config_next(),
+                        on_back: move |_| config_back(),
+                        error
+                    }
+                } else if config_status() == ConfigStep::ConfigureNextcloud {
+                    NextcloudConfig {
+                        on_continue: move |_| config_next(),
+                        on_back: move |_| config_back(),
+                        error
+                    }
+                } else if config_status() == ConfigStep::ConfigureDisks {
+                    CfgSetupStorage {
+                        on_continue: move |_| config_next(),
+                        on_back: move |_| config_back(),
+                        error
+                    }
                 }
             }
         },

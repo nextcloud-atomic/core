@@ -13,7 +13,7 @@ pub async fn require_setup_not_complete(Extension(config): Extension<Config>, re
     if PathBuf::from(config.config_path.as_str()).join("system/setup_complete").exists() {
         #[cfg(debug_assertions)]
         eprintln!("Refusing to serve endpoint: setup already completed");
-        Err((StatusCode::PRECONDITION_FAILED, "setupalready completed".to_string()))
+        Err((StatusCode::PRECONDITION_FAILED, "setup already completed".to_string()))
     } else {
         Ok(next.run(req).await)
     }
