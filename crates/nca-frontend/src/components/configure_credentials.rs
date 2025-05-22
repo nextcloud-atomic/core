@@ -63,23 +63,26 @@ enum CredentialsConfigStep {
 #[component]
 pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
     let mut nca_primary_password = use_signal(|| "".to_string());
+    let mut nc_admin_password = use_signal(|| "".to_string());
     let mut credentials: Signal<Option<NcaCredentials>> = use_signal(|| None);
-    let mut step = use_signal(|| 0);
+    let mut pw_accordion_active = use_signal(|| 0);
     // let mut is_valid = use_signal(|| false);
 
     let mut cred_config_step = use_signal(|| CredentialsConfigStep::Passwords);
+
+    let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password()));
+    let nc_admin_password_strength = use_memo(move || check_is_secure_password(nc_admin_password()));
 
     let is_valid = use_memo(move ||
         match cred_config_step() {
             CredentialsConfigStep::Passwords => {
                 tracing::info!("calculating password strength ...");
-                let is_strong_password = check_is_secure_password(nca_primary_password().to_string()) == PasswordStrength::Strong;
-                if is_strong_password {
+                if primary_password_strength() == PasswordStrength::Strong {
                     credentials.set(Some(derive_credentials_from_root_password(nca_primary_password())));
                 } else {
                     credentials.set(None);
                 }
-                is_strong_password
+                primary_password_strength() == PasswordStrength::Strong && nc_admin_password_strength() == PasswordStrength::Strong
             },
             CredentialsConfigStep::SecondFactor => true,
             CredentialsConfigStep::Backup => true,
@@ -116,9 +119,6 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
             icon: hi_solid_icons::HiMinusCircle
         })
     };
-
-
-    let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password()));
 
     rsx! {
         ul {
@@ -191,7 +191,7 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
                         Accordion {
                             title: rsx!{
                                 "Primary Password",
-                                if check_is_secure_password(nca_primary_password()) == PasswordStrength::Strong {
+                                if primary_password_strength == PasswordStrength::Strong {
                                     success_icon{}
                                 } else {
                                     failure_icon{}
@@ -199,12 +199,17 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
                             },
                             class: "join-item",
                             name: "credential_step",
-                            is_active: step() == 0,
+                            is_active: pw_accordion_active() == 0,
+                            on_open: move |_| pw_accordion_active.set(0),
                             InputField {
-                                r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, password_strength: Some(primary_password_strength())}),
-                                title: "Nextcloud Atomic Password",
+                                r#type: InputType::Password(PasswordFieldConfig{
+                                    hide: false,
+                                    generator: pw_accordion_active() == 0,
+                                    password_strength: Some(primary_password_strength())
+                                }),
+                                title: "Nextcloud Atomic Primary Password",
                                 label: rsx!(div {
-                                    "This password will be used to log into Nextcloud as user ",
+                                    "This password will be used to log into the Nextcloud Atomic Admin interface",
                                     span {
                                         class: "italic",
                                         "admin"
@@ -225,14 +230,41 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
                         Accordion {
                             title: rsx!{
                                 "Nextcloud Admin Password",
-                                Icon {
-                                    class: "text-success",
-                                    icon: hi_solid_icons::HiCheckCircle
+                                if nc_admin_password_strength == PasswordStrength::Strong {
+                                    success_icon{}
+                                } else {
+                                    failure_icon{}
                                 }
                             },
                             class: "join-item",
                             name: "credential_step",
-                            is_active: step() == 1,
+                            is_active: pw_accordion_active() == 1,
+                            on_open: move |_| pw_accordion_active.set(1),
+                            InputField {
+                                r#type: InputType::Password(PasswordFieldConfig{
+                                    hide: false,
+                                    generator: pw_accordion_active() == 1,
+                                    password_strength: Some(nc_admin_password_strength())
+                                }),
+                                title: "Nextcloud Admin Password",
+                                label: rsx!(div {
+                                    "This password will be used to log into Nextcloud as user ",
+                                    span {
+                                        class: "italic",
+                                        "admin"
+                                    },
+                                    "."
+                                }),
+                                value: nc_admin_password,
+                                enable_copy_button: true,
+                                prefix: rsx!(
+                                    Icon {
+                                        class: "text-secondary h-1em opacity-50",
+                                        icon: hi_solid_icons::HiKey,
+                                        height: 30,
+                                        width: 30
+                                    },)
+                            },
                         }
                     },
                 } else if cred_config_step() == CredentialsConfigStep::SecondFactor {

@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_logger::tracing;
+use rand::Rng;
 
 #[derive(Clone, Debug, Props, PartialEq)]
 pub struct AccordionProps {
@@ -7,19 +9,30 @@ pub struct AccordionProps {
     class: String,
     title: Element,
     is_active: bool,
+    on_open: EventHandler<FormEvent>,
     children: Element
 }
 
 #[component]
 pub fn Accordion(props: AccordionProps) -> Element {
 
+    let val: String = rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(8).map(char::from)
+            .collect();
     rsx!{
         li {
             class: props.class + " collapse bg-base-100 border border-base-300 border",
             input {
                 r#type: "radio",
-                name: props.name,
+                value: val.clone(),
+                name: props.name.clone(),
                 checked: props.is_active,
+                oninput: move |evt| {
+                    if evt.data.value() ==  val.clone() {
+                        props.on_open.call(evt)
+                    }
+                }
             },
             div {
                 class: "collapse-title font-semibold flex flex-row justify-between",
