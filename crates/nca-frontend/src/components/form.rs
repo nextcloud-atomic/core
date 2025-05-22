@@ -1,8 +1,5 @@
 use std::fmt::{Display, Formatter};
 use dioxus::prelude::*;
-use dioxus::core_macro::{component, rsx, Props};
-use dioxus::dioxus_core::Element;
-use dioxus::hooks::{use_effect, use_memo};
 use dioxus_free_icons::{Icon, IconShape};
 use dioxus_free_icons::icons::hi_outline_icons;
 use dioxus_free_icons::icons::hi_solid_icons;
@@ -15,7 +12,6 @@ pub fn InputField(mut props: InputFieldProps) -> Element {
         InputType::Password(cfg) => cfg.generator,
         _ => false
     };
-    let password_strength = use_memo(move || check_is_secure_password(props.value.read().to_string()));
     use_effect(move || {
         if generate_password {
             props.value.set(generate_secure_password());
@@ -126,20 +122,25 @@ pub fn InputField(mut props: InputFieldProps) -> Element {
             //     }
             },
             if let &InputType::Password(cfg) = &input_type_cfg {
-                if cfg.strength_indicator {
-                    span {
-                        class: "block h-1 my-2 mx-2 border-box",
-                        class: if password_strength() == PasswordStrength::Insecure { "bg-error" },
-                        class: if password_strength() == PasswordStrength::Weak { "bg-warning" },
-                        class: if password_strength() == PasswordStrength::Strong { "bg-success" },
-                        style: {
-                            match password_strength() {
-                                PasswordStrength::Insecure => "width: 10%;",
-                                PasswordStrength::Weak => "width: 50%",
-                                PasswordStrength::Strong => "",
+                match cfg.password_strength {
+                    Some(pw_strength) =>  {
+                        rsx!{
+                            span {
+                                class: "block h-1 my-2 mx-2 border-box",
+                                class: if pw_strength == PasswordStrength::Insecure { "bg-error" },
+                                class: if pw_strength == PasswordStrength::Weak { "bg-warning" },
+                                class: if pw_strength == PasswordStrength::Strong { "bg-success" },
+                                style: {
+                                    match pw_strength {
+                                        PasswordStrength::Insecure => "width: 10%;",
+                                        PasswordStrength::Weak => "width: 50%",
+                                        PasswordStrength::Strong => "",
+                                    }
+                                }
                             }
                         }
-                    }
+                    },
+                    None => rsx!()
                 }
             }
             if let Some(label) = props.label {
@@ -173,7 +174,7 @@ pub fn PasswordStrengthIndicator(props: PwStrengthProps) -> Element {
 pub struct PasswordFieldConfig {
     pub(crate) generator: bool,
     pub(crate) hide: bool,
-    pub(crate) strength_indicator: bool,
+    pub(crate) password_strength: Option<PasswordStrength>,
 }
 #[derive(Clone, PartialEq)]
 pub enum InputType {

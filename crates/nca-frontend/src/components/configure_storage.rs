@@ -13,9 +13,10 @@ struct Disk {
 }
 
 #[component]
-pub fn CfgSetupStorage(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>) -> Element {
+pub fn CfgSetupStorage(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
     let mut is_valid = use_signal(|| true);
     let selected_disk = use_signal(|| 0);
+    let propagate_validation = use_effect(move || on_validated(is_valid()));
 
     let mock_disks: Vec<Disk> = vec![Disk {
         label: "Root Disk".to_string(),

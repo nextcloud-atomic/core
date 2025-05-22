@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::env::current_dir;
 use std::ops::Deref;
-use std::thread::sleep;
+use std::thread::{current, sleep};
 use std::time::Duration;
 use dioxus::document::{Eval, EvalError, Script, Stylesheet};
 use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::hi_solid_icons;
 use dioxus_logger::tracing;
 use serde::{Deserialize, Serialize};
 use nca_frontend::layout::{Layout, SideBar};
@@ -19,6 +22,7 @@ use nca_frontend::ConfigStep;
 use nca_frontend::configure_credentials::{CredentialsConfig, CredentialsConfigTotp};
 use nca_frontend::configure_storage::CfgSetupStorage;
 use nca_frontend::configure_welcome::CfgWelcome;
+use nca_frontend::setup_progress_drawer::SetupProgressDrawer;
 
 fn main() {
     // tracing_wasm::set_as_global_default();
@@ -40,6 +44,36 @@ async fn receive_js_messages(sender: tokio::sync::mpsc::Sender<String>, mut eval
 }
 
 
+// rsx!(
+//             ul {
+//                 class: "steps min-h-24",
+//                 li {
+//                     class: "step step-primary",
+//                     "Welcome"
+//                 },
+//                 li {
+//                     class: "step",
+//                     class: if config_status() >= ConfigStep::ConfigurePasswords { "step-primary" },
+//                     "Setup Credentials"
+//                 },
+//                 li {
+//                     class: "step",
+//                     class: if config_status() >= ConfigStep::ConfigureNextcloud { "step-primary" },
+//                     "Setup Nextcloud"
+//                 },
+//                 li {
+//                     class: "step",
+//                     class: if config_status() >= ConfigStep::ConfigureDisks { "step-primary" },
+//                     "Setup Storage"
+//                 },
+//                 li {
+//                     class: "step",
+//                     class: if config_status() == ConfigStep::Startup { "step-primary" },
+//                     "Install Nextcloud"
+//                 }
+//             },
+// )
+
 #[component]
 fn App() -> Element {
 
@@ -48,13 +82,20 @@ fn App() -> Element {
     let error: Signal<Option<String>> = use_signal(|| None);
 
     let mut config_next = move || {
+        if ! &*config_is_valid.peek() {
+            return
+        }
         config_is_valid.set(false);
-        config_status.set(config_status().next().expect("Unexpected error: Next config step is undefined"))
+        let next_step = config_status.peek().next()
+            .expect("Unexpected error: Next config step is undefined");
+        config_status.set(next_step);
     };
 
     let mut config_back = move || {
         config_is_valid.set(false);
-        config_status.set(config_status().previous().expect("Unexpected error: Next config step is undefined"))
+        let previous_step = config_status.peek().previous()
+            .expect("Unexpected error: Next config step is undefined");
+        config_status.set(previous_step);
     };
 
     rsx! {
@@ -62,80 +103,93 @@ fn App() -> Element {
         Stylesheet { href: asset!("assets/css/style.css") }
         Stylesheet { href: asset!("assets/css/tailwind.css") }
         // Script { src: assets::DROPIN_JS }
-        Layout {    // <-- Use our layout
-            title: "Nextcloud Atomic",
-            headline: Some(rsx!(h1 {
-                class: "text-xl",
-                "Nextcloud Atomic"
-            })),
-            selected_item: SideBar::Activation,
-            enable_sidebar: false,
-            breadcrumbs: vec![],
-            if let Some(err) = error.read().deref() {
-                div {
-                    role: "alert",
-                    class: "alert alert-error mx-auto mt-4 mb-8 max-w-xl",
-                    "{err}"
-                }
-            },
-            ul {
-                class: "steps min-h-24",
-                li {
-                    class: "step step-primary",
-                    "Welcome"
-                },
-                li {
-                    class: "step",
-                    class: if config_status() >= ConfigStep::ConfigurePasswords { "step-primary" },
-                    "Setup Credentials"
-                },
-                li {
-                    class: "step",
-                    class: if config_status() >= ConfigStep::ConfigureNextcloud { "step-primary" },
-                    "Setup Nextcloud"
-                },
-                li {
-                    class: "step",
-                    class: if config_status() >= ConfigStep::ConfigureDisks { "step-primary" },
-                    "Setup Storage"
-                },
-                li {
-                    class: "step",
-                    class: if config_status() == ConfigStep::Startup { "step-primary" },
-                    "Install Nextcloud"
-                }
-            },
 
-            if config_status() == ConfigStep::Startup {
-                NcStartup {
-                    error
+        div {
+            class: "flex flex-row h-screen overflow-hidden",
+            SetupProgressDrawer{
+                current_step: config_status(),
+                on_select_step: move |step: ConfigStep| if step < *config_status.peek() && step < ConfigStep::Startup {
+                    config_status.set(step)
                 }
-            } else {
-                if config_status() == ConfigStep::Welcome {
-                    CfgWelcome {
-                        on_continue: move |_| config_next(),
-                        error
-                    }
-                } else if config_status() == ConfigStep::ConfigurePasswords {
-                    CredentialsConfig {
-                        on_continue: move |_| config_next(),
-                        on_back: move |_| config_back(),
-                        error
-                    }
-                } else if config_status() == ConfigStep::ConfigureNextcloud {
-                    NextcloudConfig {
-                        on_continue: move |_| config_next(),
-                        on_back: move |_| config_back(),
-                        error
-                    }
-                } else if config_status() == ConfigStep::ConfigureDisks {
-                    CfgSetupStorage {
-                        on_continue: move |_| config_next(),
-                        on_back: move |_| config_back(),
-                        error
+            },
+            main {
+                id: "main-content",
+                class: "flex-1 flex flex-col h-full",
+                // header {
+                //     class: "flex items-center p-4 border-b border-base-300",
+                //     nav {
+                //         aria_label: "breadcrumb",
+                //         ol {
+                //             class: "flex flex-wrap items-center gap-1.5 break-words text-sm sm:gap-2.5",
+                //             li {
+                //                 class: "ml-3 items-center gap-1.5 hidden md:block",
+                //                 h1 {
+                //                     class: "text-xl",
+                //                     "Nextcloud Atomic"
+                //                 }
+                //             }
+                //         }
+                //     }
+                // },
+                section {
+                    class: "flex flex-col flex-1 min-h-0",
+                    if let Some(err) = error.read().deref() {
+                        div {
+                            role: "alert",
+                            class: "alert alert-error mx-auto mt-4 mb-8 max-w-xl",
+                            "{err}"
+                        }
+                    },
+                    if config_status() == ConfigStep::Startup {
+                        NcStartup {
+                            error
+                        }
+                    } else {
+                        if config_status() == ConfigStep::Welcome {
+                            CfgWelcome {
+                                on_continue: move |_| config_next(),
+                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
+                                error
+                            }
+                        } else if config_status() == ConfigStep::ConfigurePasswords {
+                            CredentialsConfig {
+                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
+                                on_continue: move |_| config_next(),
+                                on_back: move |_| config_back(),
+                                error
+                            }
+                        } else if config_status() == ConfigStep::ConfigureNextcloud {
+                            NextcloudConfig {
+                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
+                                on_continue: move |_| config_next(),
+                                on_back: move |_| config_back(),
+                                error
+                            }
+                        } else if config_status() == ConfigStep::ConfigureDisks {
+                            CfgSetupStorage {
+                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
+                                on_continue: move |_| config_next(),
+                                on_back: move |_| config_back(),
+                                error
+                            }
+                        }
                     }
                 }
             }
         },
     }
 }
+
+// #[derive(PartialEq, Clone, Props)]
+// struct SetupProgressDrawerProps {
+//     current_step: ConfigStep,
+//     on_select_step: EventHandler<ConfigStep>,
+//     #[props(default = String::default())]
+//     class: String,
+// }
+
+// fn select_step (step: ConfigStep, current_step: ConfigStep, on_select: EventHandler<ConfigStep>) {
+//     if current_step > step && current_step < ConfigStep::Startup {
+//     props.on_select_step.call(step);
+//     }
+// }

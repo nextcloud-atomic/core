@@ -3,8 +3,9 @@ use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueB
 use crate::ConfigStep;
 
 #[component]
-pub fn CfgWelcome(error: Signal<Option<String>>, on_continue: EventHandler<MouseEvent>) -> Element {
-    
+pub fn CfgWelcome(error: Signal<Option<String>>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
+    on_validated(true);
+
     rsx! {
         CfgConfigStep {
             back_button: None,

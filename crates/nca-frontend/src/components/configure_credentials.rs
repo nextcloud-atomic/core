@@ -10,6 +10,7 @@ use crate::components::form::{InputField, PasswordFieldConfig, InputType};
 use std::borrow::Borrow;
 use daisy_rsx::accordian::AccordianProps;
 use dioxus::html::a::class;
+use crate::components::accordion::Accordion;
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,23 +50,43 @@ fn derive_credentials_from_root_password(root_password: String) -> NcaCredential
     return NcaCredentials{}
 }
 
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+enum CredentialsConfigStep {
+    Passwords,
+    SecondFactor,
+    Backup,
+    Verify,
+    Summary
+}
+
 #[component]
-pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>) -> Element {
+pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
     let mut nca_primary_password = use_signal(|| "".to_string());
     let mut credentials: Signal<Option<NcaCredentials>> = use_signal(|| None);
     let mut step = use_signal(|| 0);
-    let mut is_valid = use_signal(|| false);
+    // let mut is_valid = use_signal(|| false);
 
-    use_effect(move || {
-        tracing::info!("calculating password strength ...");
-        let is_strong_password = check_is_secure_password(nca_primary_password().to_string()) == PasswordStrength::Strong;
-        if is_strong_password {
-            credentials.set(Some(derive_credentials_from_root_password(nca_primary_password())));
-        } else {
-            credentials.set(None);
+    let mut cred_config_step = use_signal(|| CredentialsConfigStep::Passwords);
+
+    let is_valid = use_memo(move ||
+        match cred_config_step() {
+            CredentialsConfigStep::Passwords => {
+                tracing::info!("calculating password strength ...");
+                let is_strong_password = check_is_secure_password(nca_primary_password().to_string()) == PasswordStrength::Strong;
+                if is_strong_password {
+                    credentials.set(Some(derive_credentials_from_root_password(nca_primary_password())));
+                } else {
+                    credentials.set(None);
+                }
+                is_strong_password
+            },
+            CredentialsConfigStep::SecondFactor => true,
+            CredentialsConfigStep::Backup => true,
+            CredentialsConfigStep::Verify => true,
+            CredentialsConfigStep::Summary => true
         }
-        is_valid.set(is_strong_password)
-    });
+    );
     use_effect(move || {
         match credentials() {
             Some(creds) => tracing::info!("salt: {}", creds.salt),
@@ -73,64 +94,157 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
         }
     });
 
+    let propagate_validation = use_effect(move || on_validated(is_valid()));
+
+    let success_icon = || {
+        rsx!(Icon {
+            class: "text-success",
+            icon: hi_solid_icons::HiCheckCircle
+        })
+    };
+
+    let failure_icon = || {
+        rsx!(Icon {
+            class: "text-error",
+            icon: hi_solid_icons::HiXCircle
+        })
+    };
+
+    let untouched_icon = || {
+        rsx!(Icon {
+            class: "text-default",
+            icon: hi_solid_icons::HiMinusCircle
+        })
+    };
+
+
+    let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password()));
+
     rsx! {
+        ul {
+            class: "steps min-h-24",
+            li {
+                class: "step step-primary",
+                "Primary Password"
+            },
+            li {
+                class: "step",
+                class: if cred_config_step() >= CredentialsConfigStep::SecondFactor { "step-primary" },
+                "2nd Factor"
+            },
+            li {
+                class: "step",
+                class: if cred_config_step() >= CredentialsConfigStep::Backup { "step-primary" },
+                "Emergency Backup"
+            },
+            li {
+                class: "step",
+                class: if cred_config_step() >= CredentialsConfigStep::Verify { "step-primary" },
+                "Confirm Credentials"
+            },
+            li {
+                class: "step",
+                class: if cred_config_step() >= CredentialsConfigStep::Summary { "step-primary" },
+                "Summary"
+            },
+
+        },
         CfgConfigStep {
             back_button: rsx!(ConfigStepContinueButton{
-                on_click: on_back,
+                on_click:  move |evt| {
+                    let next_step = match *cred_config_step.peek() {
+                        CredentialsConfigStep::Passwords => {
+                            on_back.call(evt);
+                            return;
+                        },
+                        CredentialsConfigStep::SecondFactor => CredentialsConfigStep::Passwords,
+                        CredentialsConfigStep::Backup => CredentialsConfigStep::SecondFactor,
+                        CredentialsConfigStep::Verify => CredentialsConfigStep::Backup,
+                        CredentialsConfigStep::Summary => CredentialsConfigStep::Verify,
+                    };
+                    cred_config_step.set(next_step);
+                },
                 button_text: "Back"
             }),
             continue_button: rsx!(ConfigStepContinueButton{
-                on_click: on_continue,
+                on_click: move |evt| {
+                    let next_step = match *cred_config_step.peek() {
+                        CredentialsConfigStep::Passwords => CredentialsConfigStep::SecondFactor,
+                        CredentialsConfigStep::SecondFactor => CredentialsConfigStep::Backup,
+                        CredentialsConfigStep::Backup => CredentialsConfigStep::Verify,
+                        CredentialsConfigStep::Verify => CredentialsConfigStep::Summary,
+                        CredentialsConfigStep::Summary => {
+                            on_continue.call(evt);
+                            return;
+                        }
+                    };
+                    cred_config_step.set(next_step);
+                },
                 button_text: "Continue",
                 disabled: !is_valid()
             }),
             div {
                 class: "flex-none p-2",
-                div {
-                    class: "pb-2",
-                    Accordian {
-                        title: "Primary Password",
-                        name: "credential_step",
-                        checked: step() == 0,
-                        InputField {
-                            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, strength_indicator: true}),
-                            title: "Nextcloud Atomic Password",
-                            label: rsx!(div {
-                                "This password will be used to log into Nextcloud as user ",
-                                span {
-                                    class: "italic",
-                                    "admin"
-                                },
-                                "."
-                            }),
-                            value: nca_primary_password,
-                            enable_copy_button: true,
-                            prefix: rsx!(
-                                Icon {
-                                    class: "text-secondary h-1em opacity-50",
-                                    icon: hi_solid_icons::HiKey,
-                                    height: 30,
-                                    width: 30
-                                },)
+                if cred_config_step() == CredentialsConfigStep::Passwords {
+                    div {
+                        class: "pb-2 join join-vertical",
+                        Accordion {
+                            title: rsx!{
+                                "Primary Password",
+                                if check_is_secure_password(nca_primary_password()) == PasswordStrength::Strong {
+                                    success_icon{}
+                                } else {
+                                    failure_icon{}
+                                }
+                            },
+                            class: "join-item",
+                            name: "credential_step",
+                            is_active: step() == 0,
+                            InputField {
+                                r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, password_strength: Some(primary_password_strength())}),
+                                title: "Nextcloud Atomic Password",
+                                label: rsx!(div {
+                                    "This password will be used to log into Nextcloud as user ",
+                                    span {
+                                        class: "italic",
+                                        "admin"
+                                    },
+                                    "."
+                                }),
+                                value: nca_primary_password,
+                                enable_copy_button: true,
+                                prefix: rsx!(
+                                    Icon {
+                                        class: "text-secondary h-1em opacity-50",
+                                        icon: hi_solid_icons::HiKey,
+                                        height: 30,
+                                        width: 30
+                                    },)
+                            },
                         },
-                    },
-                }
-                div {
-                    class: "my-2",
-                    Accordian {
-                        title: "Time based one-time password",
-                        name: "credential_step",
-                        checked: step() == 1,
-                        CredentialsConfigTotp {
-
+                        Accordion {
+                            title: rsx!{
+                                "Nextcloud Admin Password",
+                                Icon {
+                                    class: "text-success",
+                                    icon: hi_solid_icons::HiCheckCircle
+                                }
+                            },
+                            class: "join-item",
+                            name: "credential_step",
+                            is_active: step() == 1,
                         }
+                    },
+                } else if cred_config_step() == CredentialsConfigStep::SecondFactor {
+                    CredentialsConfigTotp {
+
                     }
-                }
-                if credentials().is_some() {
+                } else if cred_config_step() == CredentialsConfigStep::Summary {
                     CredentialsConfigSummary {
                         credentials: credentials().unwrap()
                     }
                 }
+
             }
         }
     }
@@ -156,7 +270,7 @@ pub fn CredentialsConfigSummary(credentials: NcaCredentials) -> Element {
             "The following credentials are automatically generated from your primary password. Please download or copy them and store them safely. You will need them to access your backups or your data in emergency cases."
         },
         InputField {
-            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, strength_indicator: false}),
+            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
             disabled: true,
             title: "System Salt",
             label: rsx!(div {
@@ -165,7 +279,7 @@ pub fn CredentialsConfigSummary(credentials: NcaCredentials) -> Element {
             value: salt,
         },
         InputField {
-            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, strength_indicator: false}),
+            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
             disabled: true,
             title: "Disk Encryption Password",
             label: rsx!(div {
@@ -175,7 +289,7 @@ pub fn CredentialsConfigSummary(credentials: NcaCredentials) -> Element {
             enable_copy_button: true,
         },
         InputField {
-            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, strength_indicator: false}),
+            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
             disabled: true,
             title: "Backup Password",
             label: rsx!(div {
@@ -185,7 +299,7 @@ pub fn CredentialsConfigSummary(credentials: NcaCredentials) -> Element {
             enable_copy_button: true,
         },
         InputField {
-            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, strength_indicator: false}),
+            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
             disabled: true,
             title: "2nd Factor Backup Codes",
             label: rsx!(div {
@@ -226,7 +340,7 @@ pub fn CredentialsConfigTotp() -> Element {
             //     }
             // },
             Card {
-                class: "bg-base-100 w-full center shadow-sm p-2",
+                class: "border-base-100 w-full center shadow-sm p-2",
                 CardHeader {
                     title: "TOTP Setup",
                 },

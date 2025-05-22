@@ -166,10 +166,10 @@ pub enum ConfigStep {
 
 impl ConfigStep {
     
-    pub fn hasNext(self) -> bool {
-        self != ConfigStep::Startup
+    pub fn hasNext(&self) -> bool {
+        self != &ConfigStep::Startup
     }
-    pub fn next(self) -> Option<ConfigStep> {
+    pub fn next(&self) -> Option<ConfigStep> {
         match self {
             ConfigStep::Welcome => Some(ConfigStep::ConfigurePasswords),
             ConfigStep::ConfigurePasswords => Some(ConfigStep::ConfigureNextcloud),
@@ -180,11 +180,11 @@ impl ConfigStep {
 
     }
     
-    pub fn hasPrevious(self) -> bool {
-        self != ConfigStep::Welcome
+    pub fn hasPrevious(&self) -> bool {
+        self != &ConfigStep::Welcome
     }
     
-    pub fn previous(self) -> Option<ConfigStep> {
+    pub fn previous(&self) -> Option<ConfigStep> {
         match self {
             ConfigStep::Startup => Some(ConfigStep::ConfigureDisks),
             ConfigStep::ConfigureDisks => Some(ConfigStep::ConfigureNextcloud),
@@ -202,7 +202,7 @@ pub fn generate_secure_password() -> String {
         .collect()
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd, Copy)]
 pub enum PasswordStrength {
     Insecure,
     Weak,

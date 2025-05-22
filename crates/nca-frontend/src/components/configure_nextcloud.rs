@@ -40,10 +40,12 @@ async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_pas
 }
 
 #[component]
-pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>) -> Element {
+pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
     let mut nc_admin_password = use_signal(|| "".to_string());
     let nc_domain = use_signal(|| window().unwrap().location().hostname().unwrap());
     let mut is_valid = use_signal(|| false);
+    let nc_admin_password_strength = use_signal(|| check_is_secure_password(nc_admin_password()));
+    let propagate_validation = use_effect(move || on_validated(is_valid()));
 
 
     rsx! {
@@ -71,7 +73,7 @@ pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<Mous
                     prefix: rsx!(b {"https://"})
                 },
                 InputField {
-                    r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, strength_indicator: true}),
+                    r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, password_strength: Some(nc_admin_password_strength())}),
                     title: "Nextcloud admin password",
                     label: rsx!(div {
                         "This password will be used to log into Nextcloud as user ",
