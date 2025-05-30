@@ -9,8 +9,9 @@ use dioxus_free_icons::icons::hi_outline_icons;
 use dioxus_free_icons::icons::hi_solid_icons;
 use http::StatusCode;
 use crate::components::form::{InputField, InputType, PasswordFieldConfig};
-use crate::{base_url, check_is_secure_password, do_post, ConfigStep, HttpResponse, MockResponse, PasswordStrength};
+use crate::{base_url, check_is_secure_password, do_post, ConfigStepStatus, HttpResponse, MockResponse, PasswordStrength, StepStatus};
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
+use crate::configure_credentials::CredentialsConfig;
 // #[derive(Props, PartialEq, Clone)]
 // pub struct NcConfigProps {
 //     configuration_complete: Signal<bool>,
@@ -39,13 +40,44 @@ async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_pas
     Ok(resp.into())
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct NextcloudConfig {
+    domain: String,
+    status: ConfigStepStatus
+}
+
+impl NextcloudConfig {
+    pub fn new() -> Self {
+        NextcloudConfig {
+            domain: "localhost".to_string(),
+            status: ConfigStepStatus::new()
+        }
+    }
+
+    pub fn status(&self) -> ConfigStepStatus {
+        self.status
+    }
+}
+
+
 #[component]
-pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
-    let mut nc_admin_password = use_signal(|| "".to_string());
+pub fn CfgNextcloud(
+    error: Signal<Option<String>>,
+    on_back: EventHandler<MouseEvent>,
+    on_continue: EventHandler<MouseEvent>,
+    config: Signal<NextcloudConfig>,
+    status: Signal<ConfigStepStatus>,
+    nc_admin_password: String
+) -> Element {
+
+    use_effect(move || status.set({
+        let old = status.peek();
+        old.with_visited(true)
+    }));
+
+    // let mut nc_admin_password = use_signal(|| "".to_string());
     let nc_domain = use_signal(|| window().unwrap().location().hostname().unwrap());
-    let mut is_valid = use_signal(|| false);
-    let nc_admin_password_strength = use_signal(|| check_is_secure_password(nc_admin_password()));
-    let propagate_validation = use_effect(move || on_validated(is_valid()));
+    // let nc_admin_password_strength = use_signal(|| check_is_secure_password(nc_admin_password()));
 
 
     rsx! {
@@ -57,7 +89,7 @@ pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<Mous
             continue_button: rsx!(ConfigStepContinueButton{
                 on_click: on_continue,
                 button_text: "Continue",
-                disabled: !is_valid()
+                disabled: !status().valid
             }),
             div {
                 class: "block max-w-4xl mx-auto grid center gap-4",
@@ -72,27 +104,27 @@ pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<Mous
                     enable_copy_button: false,
                     prefix: rsx!(b {"https://"})
                 },
-                InputField {
-                    r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, password_strength: Some(nc_admin_password_strength())}),
-                    title: "Nextcloud admin password",
-                    label: rsx!(div {
-                        "This password will be used to log into Nextcloud as user ",
-                        span {
-                            class: "italic",
-                            "admin"
-                        },
-                        "."
-                    }),
-                    value: nc_admin_password,
-                    enable_copy_button: true,
-                    prefix: rsx!(
-                        Icon {
-                            class: "text-secondary h-1em opacity-50",
-                            icon: hi_solid_icons::HiKey,
-                            height: 30,
-                            width: 30
-                        },)
-                },
+                // InputField {
+                //     r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: true, password_strength: Some(nc_admin_password_strength())}),
+                //     title: "Nextcloud admin password",
+                //     label: rsx!(div {
+                //         "This password will be used to log into Nextcloud as user ",
+                //         span {
+                //             class: "italic",
+                //             "admin"
+                //         },
+                //         "."
+                //     }),
+                //     value: nc_admin_password,
+                //     enable_copy_button: true,
+                //     prefix: rsx!(
+                //         Icon {
+                //             class: "text-secondary h-1em opacity-50",
+                //             icon: hi_solid_icons::HiKey,
+                //             height: 30,
+                //             width: 30
+                //         },)
+                // },
     
                 button {
                     class: "btn btn-primary",
@@ -100,20 +132,21 @@ pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<Mous
                     onclick:  move |evt: Event<MouseData>| {
                         evt.prevent_default();
                         evt.stop_propagation();
+                        let admin_pw = nc_admin_password.clone();
                         async move {
-                            if check_is_secure_password(nc_admin_password.peek().to_string()) != PasswordStrength::Strong {
-                                error.set(Some("Error: The configured password is insecure!".to_string()));
-                                return;
-                            }
+                            // if check_is_secure_password(nc_admin_password.peek().to_string()) != PasswordStrength::Strong {
+                            //     error.set(Some("Error: The configured password is insecure!".to_string()));
+                            //     return;
+                            // }
                             if let Ok(nc_url) = Url::parse(&format!("https://{}/", nc_domain.peek().to_string())) {
                                 let request_url = format!("{}/api/setup/configure", base_url());
                                 let payload = json!({
                                         "nextcloud_domain": nc_url.host_str(),
-                                        "nextcloud_password": nc_admin_password.peek().to_string()
+                                        "nextcloud_password": admin_pw
                                     });
                                 match configure_nextcloud_credentials(
                                     nc_url.host_str().and_then(|s| Some(s.to_string())), 
-                                    nc_admin_password.peek().to_string()).await {
+                                    admin_pw).await {
                                     Err(e) => {
                                         tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
                                         error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
@@ -128,7 +161,7 @@ pub fn NextcloudConfig(error: Signal<Option<String>>, on_back: EventHandler<Mous
                                             return;
                                         }
                                         tracing::info!("configuration completed successfully");
-                                        is_valid.set(true)
+                                        status.set(status().with_valid(true).with_completed(true))
                                     }
                                 }
                             } else {

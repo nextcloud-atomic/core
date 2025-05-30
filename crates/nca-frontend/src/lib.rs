@@ -2,14 +2,16 @@ pub mod layout;
 pub mod assets;
 pub mod components;
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use bytes::Bytes;
+use dioxus::prelude::Signal;
 use http::{StatusCode};
 use paspio::entropy;
 use rand::Rng;
 use reqwest::{Body, Response, Url};
 use serde::de::DeserializeOwned;
 pub use crate::components::*;
-
 // use web_sys::window;
 
 #[cfg(not(feature = "mock-backend"))]
@@ -155,45 +157,104 @@ pub(crate) async fn do_post<T: Into<Body>>(request_url: &str, body: T, content_t
         .map(|r| r.into())
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub struct ConfigStepStatus {
+    pub visited: bool,
+    pub valid: bool,
+    pub completed: bool,
+}
+
+impl ConfigStepStatus {
+    pub fn new() -> Self {
+        ConfigStepStatus {
+            visited: false,
+            valid: false,
+            completed: false,
+        }
+    }
+    
+    pub fn with_visited(self, visited: bool) -> Self {
+        ConfigStepStatus {
+            visited,
+            valid: self.valid,
+            completed: self.completed,
+        }
+    }
+    pub fn with_valid(self, valid: bool) -> Self {
+        ConfigStepStatus {
+            visited: self.visited,
+            valid,
+            completed: self.completed,
+        }
+    }
+    
+    pub fn with_completed(self, completed: bool) -> Self {
+        ConfigStepStatus {
+            visited: self.visited,
+            valid: self.valid,
+            completed,
+        }
+    }
+}
+
+
+#[derive(Clone, PartialEq, PartialOrd)]
 pub enum ConfigStep {
     Welcome,
-    ConfigurePasswords,
-    ConfigureNextcloud,
-    ConfigureDisks,
-    Startup
+    Credentials,
+    Nextcloud,
+    Disks,
+    Startup,
+}
+#[derive(Clone, PartialOrd, PartialEq)]
+pub struct ConfigStepWithStatus {
+    pub step: ConfigStep,
+    pub status: ConfigStepStatus
 }
 
-impl ConfigStep {
-    
-    pub fn hasNext(&self) -> bool {
-        self != &ConfigStep::Startup
-    }
-    pub fn next(&self) -> Option<ConfigStep> {
-        match self {
-            ConfigStep::Welcome => Some(ConfigStep::ConfigurePasswords),
-            ConfigStep::ConfigurePasswords => Some(ConfigStep::ConfigureNextcloud),
-            ConfigStep::ConfigureNextcloud => Some(ConfigStep::ConfigureDisks),
-            ConfigStep::ConfigureDisks => Some(ConfigStep::Startup),
-            ConfigStep::Startup => None,
-        }
+pub trait StepStatus {
+    fn completed(&self) -> bool;
+}
 
+pub struct GenericStep {
+    completed: bool
+}
+
+
+impl GenericStep {
+    fn set_completed(&mut self, val: bool) {
+        self.completed = val;
     }
-    
-    pub fn hasPrevious(&self) -> bool {
-        self != &ConfigStep::Welcome
+
+    pub fn complete() -> Self{
+        GenericStep{completed: true}
     }
-    
-    pub fn previous(&self) -> Option<ConfigStep> {
-        match self {
-            ConfigStep::Startup => Some(ConfigStep::ConfigureDisks),
-            ConfigStep::ConfigureDisks => Some(ConfigStep::ConfigureNextcloud),
-            ConfigStep::ConfigureNextcloud => Some(ConfigStep::ConfigurePasswords),
-            ConfigStep::ConfigurePasswords => Some(ConfigStep::Welcome),
-            ConfigStep::Welcome => None,
-        }
+
+    pub fn incomplete() -> Self {
+        GenericStep{completed: false}
     }
 }
+
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum ConfigStep {
+//     Welcome(Signal<Box<StepStatus>),
+//     ConfigureCredentials(Signal<StepStatus>, Signal<Option<CredentialsConfig>>),
+//     ConfigureNextcloud(Signal<StepStatus>, Signal<Option<NextcloudConfig>>),
+//     ConfigureDisks(Signal<StepStatus>),
+//     Startup(Signal<StepStatus>)
+// }
+
+// impl ConfigStep {
+//     pub fn completed(&self) -> bool {
+//         match self {
+//             ConfigStep::Welcome(status) => status().completed,
+//             ConfigStep::ConfigureCredentials(status, _) => status().completed,
+//             ConfigStep::ConfigureNextcloud(status, _) => status().completed,
+//             ConfigStep::ConfigureDisks(status) => status().completed,
+//             ConfigStep::Startup(status) => status().completed,
+//         }
+//     }
+// }
 
 pub fn generate_secure_password() -> String {
     rand::rng()

@@ -1,10 +1,15 @@
+use std::rc::Rc;
+use std::sync::Mutex;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::hi_solid_icons;
-use crate::ConfigStep;
+use dioxus_logger::tracing;
+use crate::{ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, NextcloudConfig, StepStatus};
+use crate::configure_credentials::CredentialsConfig;
+
 
 #[component]
-pub fn SetupProgressDrawer(current_step: ConfigStep, on_select_step: EventHandler<ConfigStep>) -> Element {
+pub fn SetupProgressDrawer(steps: Vec<ConfigStepWithStatus>, current_step_id: usize, on_select_step: EventHandler<usize>) -> Element {
 
     rsx!{
         div {
@@ -35,42 +40,49 @@ pub fn SetupProgressDrawer(current_step: ConfigStep, on_select_step: EventHandle
                         class: "menu-title text-xl hover:bg-inherit",
                         h2 { "Setup Nextcloud Atomic" }
                     }
-                    SetupProgressStep{
-                        title: "Welcome",
-                        idx: 1,
-                        is_active: current_step == ConfigStep::Welcome,
-                        is_complete: current_step > ConfigStep::Welcome,
-
-                        on_select: move || on_select_step.call(ConfigStep::Welcome)
-                    },
-                    SetupProgressStep{
-                        title: "Setup Credentials",
-                        idx: 2,
-                        is_active: current_step == ConfigStep::ConfigurePasswords,
-                        is_complete: current_step > ConfigStep::ConfigurePasswords,
-                        // on_select: || update_current_step(ConfigStep::ConfigurePasswords)
-                        on_select: move || on_select_step.call(ConfigStep::ConfigurePasswords)
-                    },
-                    SetupProgressStep{
-                        title: "Setup Nextcloud",
-                        idx: 3,
-                        is_active: current_step == ConfigStep::ConfigureNextcloud,
-                        is_complete: current_step > ConfigStep::ConfigureNextcloud,
-                        on_select: move || on_select_step.call(ConfigStep::ConfigureNextcloud)
-                    },
-                    SetupProgressStep{
-                        title: "Setup Storage",
-                        idx: 4,
-                        is_active: current_step == ConfigStep::ConfigureDisks,
-                        is_complete: current_step > ConfigStep::ConfigureDisks,
-                        on_select: move || on_select_step.call(ConfigStep::ConfigureDisks)
-                    },
-                    SetupProgressStep{
-                        title: "Install Nextcloud",
-                        idx: 5,
-                        is_active: current_step == ConfigStep::Startup,
-                        is_complete: current_step > ConfigStep::Startup,
-                        on_select: move || {}
+                    for (idx, ConfigStepWithStatus{step, status}) in steps.iter().enumerate() {
+                        if let ConfigStep::Welcome = step {
+                            SetupProgressStep{
+                                title: "Welcome",
+                                idx: 1,
+                                is_active: current_step_id == idx,
+                                is_complete: status.completed,
+                                on_select: move || on_select_step.call(idx)
+                            },
+                        } else if let ConfigStep::Credentials = step {
+                            SetupProgressStep{
+                                title: "Setup Credentials",
+                                idx: 2,
+                                is_active: current_step_id == idx,
+                                is_complete: status.completed,
+                                on_select: move || on_select_step.call(idx)
+                            },
+                        } else  if let ConfigStep::Nextcloud = step {
+                            SetupProgressStep{
+                                title: "Setup Nextcloud",
+                                idx: 3,
+                                is_active: current_step_id == idx,
+                                is_complete: status.completed,
+                                on_select: move || on_select_step.call(idx)
+                            },
+                        } else if let ConfigStep::Disks = step {
+                        
+                            SetupProgressStep{
+                                title: "Setup Storage",
+                                idx: 4,
+                                is_active: current_step_id == idx,
+                                is_complete: status.completed,
+                                on_select: move || on_select_step.call(idx)
+                            },
+                        } else if let ConfigStep::Startup = step {
+                            SetupProgressStep{
+                                title: "Start Services",
+                                idx: 5,
+                                is_active: current_step_id == idx,
+                                is_complete: status.completed,
+                                on_select: move || on_select_step.call(idx)
+                            }
+                        }
                     }
                 }
             }
@@ -90,7 +102,7 @@ fn SetupProgressStep(title: String, is_active: bool, is_complete: bool, idx: usi
                     class: "text-xl font-thin opacity-80 flex-none",
                     {format!("{:0>2}", idx)}
                 },
-                {{ title }},
+                { title },
                 if is_complete {
                     Icon {
                         class: "text-success",

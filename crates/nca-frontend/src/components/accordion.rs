@@ -22,7 +22,7 @@ pub fn Accordion(props: AccordionProps) -> Element {
             .collect();
     rsx!{
         li {
-            class: props.class + " collapse bg-base-100 border border-base-300 border",
+            class: props.class + " collapse bg-base-100 border border-base-300 border w-full",
             input {
                 r#type: "radio",
                 value: val.clone(),
@@ -35,12 +35,12 @@ pub fn Accordion(props: AccordionProps) -> Element {
                 }
             },
             div {
-                class: "collapse-title font-semibold flex flex-row justify-between",
-                {{ props.title }}
+                class: "collapse-title font-semibold flex flex-row justify-between w-full",
+                { props.title }
             },
             div {
-                class: "collapse-content text-sm",
-                {{ props.children }}
+                class: "collapse-content text-sm w-full",
+                { props.children }
             }
         }
     }

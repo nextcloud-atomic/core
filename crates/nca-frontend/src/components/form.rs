@@ -13,7 +13,7 @@ pub fn InputField(mut props: InputFieldProps) -> Element {
         _ => false
     };
     use_effect(move || {
-        if generate_password {
+        if generate_password && props.value.peek().is_empty() {
             props.value.set(generate_secure_password());
         }
     });
@@ -33,7 +33,7 @@ pub fn InputField(mut props: InputFieldProps) -> Element {
 
     rsx! {
         fieldset {
-            class: "fieldset",
+            class: props.class + " fieldset",
             if props.show_title.unwrap_or(true) {
                 legend {
                     class: "fieldset-legend text-lg",
@@ -186,11 +186,18 @@ pub enum InputType {
 #[derive(Props, Clone, PartialEq)]
 pub struct InputFieldProps {
     title: String,
+    #[props(default = "".to_string())]
+    class: String,
+    #[props(default = None)]
     label: Option<Element>,
     value: Signal<String>,
     r#type: InputType,
+    #[props(default = None)]
     show_title: Option<bool>,
+    #[props(default = None)]
     enable_copy_button: Option<bool>,
+    #[props(default = None)]
     prefix: Option<Element>,
+    #[props(default = None)]
     disabled: Option<bool>
 }

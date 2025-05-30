@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons;
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
-
+use crate::ConfigStepStatus;
 
 #[derive(Props, Debug, PartialEq, Clone)]
 struct Disk {
@@ -13,10 +13,18 @@ struct Disk {
 }
 
 #[component]
-pub fn CfgSetupStorage(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
-    let mut is_valid = use_signal(|| true);
+pub fn CfgSetupStorage(
+    error: Signal<Option<String>>,
+    on_back: EventHandler<MouseEvent>,
+    on_continue: EventHandler<MouseEvent>,
+    status: Signal<ConfigStepStatus>
+) -> Element {
+    use_effect(move || status.set({
+        let old = status.peek();
+        old.with_visited(true).with_valid(true).with_completed(true)
+    }));
+
     let selected_disk = use_signal(|| 0);
-    let propagate_validation = use_effect(move || on_validated(is_valid()));
 
     let mock_disks: Vec<Disk> = vec![Disk {
         label: "Root Disk".to_string(),
@@ -41,7 +49,7 @@ pub fn CfgSetupStorage(error: Signal<Option<String>>, on_back: EventHandler<Mous
             continue_button: rsx!(ConfigStepContinueButton{
                 on_click: on_continue,
                 button_text: "Continue",
-                disabled: !is_valid()
+                disabled: !status().valid
             }),
             div {
                 class: "flex-none p-2",
@@ -64,7 +72,7 @@ pub fn CfgSetupStorage(error: Signal<Option<String>>, on_back: EventHandler<Mous
                     Alert {
                         class: "mt-4",
                         alert_color: Some(AlertColor::Warn),
-                        {{ format!("Disk \"{}\" will be erased, encrypted and formatted.", mock_disks[selected_disk()].label) }}
+                        { format!("Disk \"{}\" will be erased, encrypted and formatted.", mock_disks[selected_disk()].label) }
                     },
                 }
 
@@ -95,11 +103,11 @@ fn DiskOption(disk: Disk, disk_id: usize, selected_disk: Signal<usize>) -> Eleme
             div {
                 class: "flex-1",
                 div {
-                    {{ disk.label }}
+                    { disk.label }
                 },
                 div {
                     class: "text-xs uppercase font-semibold opacity-60",
-                    {{ format!("{} Bytes", disk.size) }}
+                    { format!("{} Bytes", disk.size) }
                 },
             }
 

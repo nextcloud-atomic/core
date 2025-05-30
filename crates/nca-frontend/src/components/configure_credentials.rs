@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use dioxus::prelude::*;
 use dioxus_free_icons::{Icon, IconShape};
 use dioxus_free_icons::icons::hi_outline_icons;
@@ -5,49 +6,71 @@ use dioxus_free_icons::icons::hi_solid_icons;
 use daisy_rsx::*;
 use dioxus_logger::tracing;
 use rand::Rng;
-use crate::{base_url, do_post, check_is_secure_password, generate_secure_password, ConfigStep, PasswordStrength};
+use crate::{base_url, do_post, check_is_secure_password, generate_secure_password, PasswordStrength, StepStatus, ConfigStepStatus};
 use crate::components::form::{InputField, PasswordFieldConfig, InputType};
-use std::borrow::Borrow;
+use std::rc::Rc;
 use daisy_rsx::accordian::AccordianProps;
 use dioxus::html::a::class;
+use serde::Serialize;
 use crate::components::accordion::Accordion;
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
+use crate::configure_credentials_backup::{ConfigureCredentialsBackup, ConfigureCredentialsConfirm};
 
-#[derive(Clone, Debug, PartialEq)]
-struct NcaCredentials {
-    salt: String,
-    primary_password: String,
-    mfa_backup_codes: [String; 16],
-    disk_encryption_password: String,
-    backup_password: String,
+#[derive(Clone, Debug, PartialEq, PartialOrd, Serialize)]
+pub struct CredentialsConfig {
+    pub salt: Option<String>,
+    pub primary_password: Option<String>,
+    pub nc_admin_password: Option<String>,
+    pub mfa_backup_codes: Option<[String; 16]>,
+    pub disk_encryption_password: Option<String>,
+    pub backup_id: Option<String>,
 }
 
-#[cfg(feature = "mock-backend")]
-fn derive_credentials_from_root_password(root_password: String) -> NcaCredentials {
-    NcaCredentials {
-        primary_password: root_password,
-        salt: rand::rng()
-            .sample_iter(rand::distr::Alphanumeric)
-            .take(12).map(char::from)
-            .collect(),
-        backup_password: rand::rng()
-            .sample_iter(rand::distr::Alphanumeric)
-            .take(24).map(char::from)
-            .collect(),
-        disk_encryption_password: rand::rng()
-            .sample_iter(rand::distr::Alphanumeric)
-            .take(24).map(char::from)
-            .collect(),
-        mfa_backup_codes: [0; 16].map(|_| rand::rng()
+impl CredentialsConfig {
+    
+    pub fn new() -> Self {
+        CredentialsConfig {
+            primary_password: None,
+            nc_admin_password: None,
+            backup_id: None,
+            disk_encryption_password: None,
+            mfa_backup_codes: None,
+            salt: None
+        }
+    }
+    #[cfg(feature = "mock-backend")]
+    fn derive_credentials_from_root_password(self) -> Self {
+        CredentialsConfig {
+            primary_password: self.primary_password,
+            nc_admin_password: Some(rand::rng()
+                .sample_iter(rand::distr::Alphanumeric)
+                .take(24).map(char::from)
+                .collect()),
+            salt : Some(rand::rng()
+                .sample_iter(rand::distr::Alphanumeric)
+                .take(12).map(char::from)
+                .collect()),
+            backup_id : Some(rand::rng()
+                .sample_iter(rand::distr::Alphanumeric)
+                .take(12).map(char::from)
+                .collect()),
+            disk_encryption_password: Some(rand::rng()
+                .sample_iter(rand::distr::Alphanumeric)
+                .take(24).map(char::from)
+                .collect()),
+            mfa_backup_codes : Some([0; 16].map( | _ | rand::rng()
                 .sample_iter(rand::distr::Alphanumeric)
                 .take(6).map(char::from)
-                .collect())
-    }
-}
+                .collect()))
+        }
 
-#[cfg(not(feature = "mock-backend"))]
-fn derive_credentials_from_root_password(root_password: String) -> NcaCredentials {
-    return NcaCredentials{}
+    }
+
+    #[cfg(not(feature = "mock-backend"))]
+    fn derive_credentials_from_root_password(root_password: String) -> CredentialsConfig {
+        return CredentialsConfig {}
+    }
+
 }
 
 
@@ -61,43 +84,86 @@ enum CredentialsConfigStep {
 }
 
 #[component]
-pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<MouseEvent>, on_continue: EventHandler<MouseEvent>, on_validated: EventHandler<bool>) -> Element {
-    let mut nca_primary_password = use_signal(|| "".to_string());
-    let mut nc_admin_password = use_signal(|| "".to_string());
-    let mut credentials: Signal<Option<NcaCredentials>> = use_signal(|| None);
-    let mut pw_accordion_active = use_signal(|| 0);
-    // let mut is_valid = use_signal(|| false);
+pub fn CfgCredentials(error: Signal<Option<String>>,
+                      on_back: EventHandler<MouseEvent>,
+                      on_continue: EventHandler<MouseEvent>,
+                      config: Signal<CredentialsConfig>,
+                      status: Signal<ConfigStepStatus>) -> Element {
+
+    let config_ref = Rc::new(RefCell::new(config));
+
+    let nca_primary_password_proxy = use_signal(|| config().primary_password.unwrap_or(String::default()));
+    use_effect(move || {
+        let pw = match nca_primary_password_proxy().as_str() {
+            "" => None,
+            val => Some(val.to_string())
+        };
+        let mut newval = {
+            config.peek().clone()
+        };
+        if config.peek().primary_password != pw {
+            newval.primary_password = pw;
+            config.set(newval);
+        }
+    });
+    let nc_admin_password_proxy = use_signal(|| config().nc_admin_password.unwrap_or(String::default()));
+    use_effect(move || {
+        let pw = match nc_admin_password_proxy().as_str() {
+            "" => None,
+            val => Some(val.to_string())
+        };
+        let mut newval = {
+            config.peek().clone()
+        };
+        if config.peek().nc_admin_password != pw {
+            newval.nc_admin_password = pw;
+            config.set(newval);
+        }
+    });
 
     let mut cred_config_step = use_signal(|| CredentialsConfigStep::Passwords);
+    let mut is_backup_complete = use_signal(|| false);
+    let mut are_credentials_confirmed = use_signal(|| false);
+    use_effect(move || {
+        {
+            let old = status.peek();
+            if old.completed && old.valid {
+                is_backup_complete.set(true);
+                are_credentials_confirmed.set(true);
+            }
+        }
+        status.set({
+            let old = status.peek();
+            old.clone().with_visited(true)
+        });
+    });
 
-    let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password()));
-    let nc_admin_password_strength = use_memo(move || check_is_secure_password(nc_admin_password()));
+    let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password_proxy()));
+    let nc_admin_password_strength = use_memo(move || check_is_secure_password(nc_admin_password_proxy()));
 
     let is_valid = use_memo(move ||
         match cred_config_step() {
             CredentialsConfigStep::Passwords => {
-                tracing::info!("calculating password strength ...");
                 if primary_password_strength() == PasswordStrength::Strong {
-                    credentials.set(Some(derive_credentials_from_root_password(nca_primary_password())));
-                } else {
-                    credentials.set(None);
+                    let newval = config.peek().clone().derive_credentials_from_root_password();
+                    config.set(newval);
                 }
                 primary_password_strength() == PasswordStrength::Strong && nc_admin_password_strength() == PasswordStrength::Strong
             },
             CredentialsConfigStep::SecondFactor => true,
-            CredentialsConfigStep::Backup => true,
-            CredentialsConfigStep::Verify => true,
+            CredentialsConfigStep::Backup => is_backup_complete(),
+            CredentialsConfigStep::Verify => are_credentials_confirmed(),
             CredentialsConfigStep::Summary => true
         }
     );
-    use_effect(move || {
-        match credentials() {
-            Some(creds) => tracing::info!("salt: {}", creds.salt),
-            None => tracing::info!("no credentials yet")
-        }
-    });
 
-    let propagate_validation = use_effect(move || on_validated(is_valid()));
+    let propagate_validation = use_effect(move || status.set({
+        tracing::info!("config is '{}', updating status", is_valid());
+        let is_valid = is_valid();
+        let is_complete = is_valid && is_backup_complete() && are_credentials_confirmed();
+        let old = status.peek();
+        old.with_valid(is_valid).with_completed(is_complete)
+    }));
 
     let success_icon = || {
         rsx!(Icon {
@@ -187,93 +253,99 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
                 class: "flex-none p-2",
                 if cred_config_step() == CredentialsConfigStep::Passwords {
                     div {
-                        class: "pb-2 join join-vertical",
-                        Accordion {
-                            title: rsx!{
-                                "Primary Password",
-                                if primary_password_strength == PasswordStrength::Strong {
-                                    success_icon{}
-                                } else {
-                                    failure_icon{}
-                                }
-                            },
-                            class: "join-item",
-                            name: "credential_step",
-                            is_active: pw_accordion_active() == 0,
-                            on_open: move |_| pw_accordion_active.set(0),
-                            InputField {
-                                r#type: InputType::Password(PasswordFieldConfig{
-                                    hide: false,
-                                    generator: pw_accordion_active() == 0,
-                                    password_strength: Some(primary_password_strength())
-                                }),
-                                title: "Nextcloud Atomic Primary Password",
-                                label: rsx!(div {
-                                    "This password will be used to log into the Nextcloud Atomic Admin interface",
-                                    span {
-                                        class: "italic",
-                                        "admin"
-                                    },
-                                    "."
-                                }),
-                                value: nca_primary_password,
-                                enable_copy_button: true,
-                                prefix: rsx!(
-                                    Icon {
-                                        class: "text-secondary h-1em opacity-50",
-                                        icon: hi_solid_icons::HiKey,
-                                        height: 30,
-                                        width: 30
-                                    },)
-                            },
+                        class: "pb-2",
+                        // Accordion {
+                        //     title: rsx!{
+                        //         "Primary Password",
+                        //         if primary_password_strength == PasswordStrength::Strong {
+                        //             success_icon{}
+                        //         } else {
+                        //             failure_icon{}
+                        //         }
+                        //     },
+                        //     class: "join-item",
+                        //     name: "credential_step",
+                        //     is_active: pw_accordion_active() == 0,
+                        //     on_open: move |_| pw_accordion_active.set(0),
+                        InputField {
+                            r#type: InputType::Password(PasswordFieldConfig{
+                                hide: false,
+                                generator: true,
+                                password_strength: Some(primary_password_strength())
+                            }),
+                            title: "Nextcloud Atomic Primary Password",
+                            label: rsx!(div {
+                                "This password will be used to log into the Nextcloud Atomic Admin interface.",
+                            }),
+                            value: nca_primary_password_proxy,
+                            enable_copy_button: true,
+                            prefix: rsx!(
+                                Icon {
+                                    class: "text-secondary h-1em opacity-50",
+                                    icon: hi_solid_icons::HiKey,
+                                    height: 30,
+                                    width: 30
+                                },)
                         },
-                        Accordion {
-                            title: rsx!{
-                                "Nextcloud Admin Password",
-                                if nc_admin_password_strength == PasswordStrength::Strong {
-                                    success_icon{}
-                                } else {
-                                    failure_icon{}
-                                }
-                            },
-                            class: "join-item",
-                            name: "credential_step",
-                            is_active: pw_accordion_active() == 1,
-                            on_open: move |_| pw_accordion_active.set(1),
-                            InputField {
-                                r#type: InputType::Password(PasswordFieldConfig{
-                                    hide: false,
-                                    generator: pw_accordion_active() == 1,
-                                    password_strength: Some(nc_admin_password_strength())
-                                }),
-                                title: "Nextcloud Admin Password",
-                                label: rsx!(div {
-                                    "This password will be used to log into Nextcloud as user ",
-                                    span {
-                                        class: "italic",
-                                        "admin"
-                                    },
-                                    "."
-                                }),
-                                value: nc_admin_password,
-                                enable_copy_button: true,
-                                prefix: rsx!(
-                                    Icon {
-                                        class: "text-secondary h-1em opacity-50",
-                                        icon: hi_solid_icons::HiKey,
-                                        height: 30,
-                                        width: 30
-                                    },)
-                            },
-                        }
+                        // },
+                        // Accordion {
+                        //     title: rsx!{
+                        //         "Nextcloud Admin Password",
+                        //         if nc_admin_password_strength == PasswordStrength::Strong {
+                        //             success_icon{}
+                        //         } else {
+                        //             failure_icon{}
+                        //         }
+                        //     },
+                        //     class: "join-item",
+                        //     name: "credential_step",
+                        //     is_active: pw_accordion_active() == 1,
+                        //     on_open: move |_| pw_accordion_active.set(1),
+                        InputField {
+                            class: "mt-4",
+                            r#type: InputType::Password(PasswordFieldConfig{
+                                hide: false,
+                                generator: true, //pw_accordion_active() == 1,
+                                password_strength: Some(nc_admin_password_strength())
+                            }),
+                            title: "Nextcloud Admin Password",
+                            label: rsx!(div {
+                                "This password will be used to log into Nextcloud as user ",
+                                span {
+                                    class: "italic",
+                                    "admin"
+                                },
+                                "."
+                            }),
+                            value: nc_admin_password_proxy,
+                            enable_copy_button: true,
+                            prefix: rsx!(
+                                Icon {
+                                    class: "text-secondary h-1em opacity-50",
+                                    icon: hi_solid_icons::HiKey,
+                                    height: 30,
+                                    width: 30
+                                },)
+                        },
+                        // }
                     },
                 } else if cred_config_step() == CredentialsConfigStep::SecondFactor {
                     CredentialsConfigTotp {
 
                     }
+                } else if cred_config_step() == CredentialsConfigStep::Backup {
+                    ConfigureCredentialsBackup {
+                        credentials: config(),
+                        is_backup_complete: is_backup_complete
+                    }
+                } else if cred_config_step() == CredentialsConfigStep::Verify {
+                    ConfigureCredentialsConfirm {
+                        credentials: config(),
+                        is_confirmed: are_credentials_confirmed
+                    }
                 } else if cred_config_step() == CredentialsConfigStep::Summary {
                     CredentialsConfigSummary {
-                        credentials: credentials().unwrap()
+                        credentials: config()
                     }
                 }
 
@@ -283,16 +355,19 @@ pub fn CredentialsConfig(error: Signal<Option<String>>, on_back: EventHandler<Mo
 }
 
 #[component]
-pub fn CredentialsConfigSummary(credentials: NcaCredentials) -> Element {
+pub fn CredentialsConfigSummary(credentials: CredentialsConfig) -> Element {
     let mut salt = use_signal(|| "".to_string());
     let mut backup_password = use_signal(|| "".to_string());
     let mut disk_encryption_password = use_signal(|| "".to_string());
     let mut mfa_backup_codes = use_signal(|| "".to_string());
     use_effect(move || {
-        salt.set(credentials.salt.clone());
-        backup_password.set(credentials.backup_password.clone());
-        disk_encryption_password.set(credentials.disk_encryption_password.clone());
-        mfa_backup_codes.set(credentials.mfa_backup_codes.join(" "));
+        salt.set(credentials.salt.clone().unwrap_or(String::default()));
+        backup_password.set(credentials.backup_id.clone().unwrap_or(String::default()));
+        disk_encryption_password.set(credentials.disk_encryption_password.clone().unwrap_or(String::default()));
+        mfa_backup_codes.set(match credentials.mfa_backup_codes.clone() {
+            Some(codes) => codes.join(" "),
+            None => String::default()
+        });
     });
 
     rsx! {

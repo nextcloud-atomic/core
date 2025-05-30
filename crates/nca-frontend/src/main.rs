@@ -1,16 +1,19 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env::current_dir;
 use std::ops::Deref;
+use std::rc::Rc;
 use std::thread::{current, sleep};
 use std::time::Duration;
 use dioxus::document::{Eval, EvalError, Script, Stylesheet};
+use dioxus::html::mover::accent;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::hi_solid_icons;
 use dioxus_logger::tracing;
 use serde::{Deserialize, Serialize};
 use nca_frontend::layout::{Layout, SideBar};
-use nca_frontend::{assets, base_url, NextcloudConfig, ServiceStatus};
+use nca_frontend::{assets, base_url, ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, NextcloudConfig, ServiceStatus};
 use nca_frontend::components::{NcStartup, Logs};
 use web_sys::window;
 use reqwest::Client;
@@ -18,10 +21,12 @@ use serde_json::json;
 use strum::IntoEnumIterator;
 use strum::EnumIter;
 use nca_system_api::systemd::types::ServiceStatus;
-use nca_frontend::ConfigStep;
-use nca_frontend::configure_credentials::{CredentialsConfig, CredentialsConfigTotp};
+use nca_frontend::{StepStatus};
+// use nca_frontend::ConfigStep::*;
+use nca_frontend::configure_credentials::{CfgCredentials, CredentialsConfig, CredentialsConfigTotp};
 use nca_frontend::configure_storage::CfgSetupStorage;
 use nca_frontend::configure_welcome::CfgWelcome;
+use nca_frontend::configure_nextcloud::CfgNextcloud;
 use nca_frontend::setup_progress_drawer::SetupProgressDrawer;
 
 fn main() {
@@ -43,59 +48,117 @@ async fn receive_js_messages(sender: tokio::sync::mpsc::Sender<String>, mut eval
     }
 }
 
-
-// rsx!(
-//             ul {
-//                 class: "steps min-h-24",
-//                 li {
-//                     class: "step step-primary",
-//                     "Welcome"
-//                 },
-//                 li {
-//                     class: "step",
-//                     class: if config_status() >= ConfigStep::ConfigurePasswords { "step-primary" },
-//                     "Setup Credentials"
-//                 },
-//                 li {
-//                     class: "step",
-//                     class: if config_status() >= ConfigStep::ConfigureNextcloud { "step-primary" },
-//                     "Setup Nextcloud"
-//                 },
-//                 li {
-//                     class: "step",
-//                     class: if config_status() >= ConfigStep::ConfigureDisks { "step-primary" },
-//                     "Setup Storage"
-//                 },
-//                 li {
-//                     class: "step",
-//                     class: if config_status() == ConfigStep::Startup { "step-primary" },
-//                     "Install Nextcloud"
-//                 }
-//             },
-// )
-
 #[component]
 fn App() -> Element {
 
-    let mut config_status = use_signal(|| ConfigStep::Welcome);
-    let mut config_is_valid = use_signal(|| false);
-    let error: Signal<Option<String>> = use_signal(|| None);
+    // Application State
+    let creds_config = Rc::new(use_signal(|| CredentialsConfig::new()));
+    let creds_status = use_signal(|| ConfigStepStatus::new());
+    let nc_config = use_signal(|| NextcloudConfig::new());
+    let nc_status = use_signal(|| ConfigStepStatus::new());
+    let disks_status = use_signal(|| ConfigStepStatus::new());
+    let startup_status = use_signal(|| ConfigStepStatus::new());
 
-    let mut config_next = move || {
-        if ! &*config_is_valid.peek() {
-            return
-        }
-        config_is_valid.set(false);
-        let next_step = config_status.peek().next()
-            .expect("Unexpected error: Next config step is undefined");
-        config_status.set(next_step);
+    let nc_admin_pw = {
+        let cfg = creds_config.clone();
+        use_memo(move || cfg().nc_admin_password.unwrap_or(String::default()))
     };
 
-    let mut config_back = move || {
-        config_is_valid.set(false);
-        let previous_step = config_status.peek().previous()
-            .expect("Unexpected error: Next config step is undefined");
-        config_status.set(previous_step);
+    let steps: Vec<ConfigStep> = vec![
+        ConfigStep::Welcome,
+        ConfigStep::Credentials,
+        ConfigStep::Nextcloud,
+        ConfigStep::Disks,
+        ConfigStep::Startup
+    ];
+
+    let steps_with_status = use_memo(move || vec![
+        ConfigStepWithStatus {
+            step: ConfigStep::Welcome,
+            status: ConfigStepStatus { visited: true, valid: true, completed: true }
+        },
+        ConfigStepWithStatus {
+            step: ConfigStep::Credentials,
+            status: creds_status()
+        },
+        ConfigStepWithStatus {
+            step: ConfigStep::Nextcloud,
+            status: nc_status()
+        },
+        ConfigStepWithStatus {
+            step: ConfigStep::Disks,
+            status: disks_status()
+        },
+        ConfigStepWithStatus {
+            step: ConfigStep::Startup,
+            status: startup_status()
+        }
+    ]);
+
+
+    let mut active_step_id = use_signal(|| 0);
+    let active_step = {
+        let steps_cp = steps.clone();
+        use_memo(move || steps_cp[active_step_id()].clone())
+    };
+
+
+    // let is_active_step_completed = use_memo(move || active_step().completed());
+    let error: Signal<Option<String>> = use_signal(|| None);
+
+    let can_advance_to_step = {
+        let steps_len = steps.len();
+        move |step_id, all_steps: Vec<ConfigStepWithStatus>| {
+            if step_id >= steps_len {
+                return false
+            }
+            if step_id == 0 {
+                return all_steps[0].status.visited
+            }
+            let step: &ConfigStepWithStatus = &all_steps[step_id];
+            let previous_step: &ConfigStepWithStatus = &all_steps[step_id - 1];
+            step.status.visited
+                || (step_id - 1 < steps_len - 1)
+                && previous_step.status.completed
+                && all_steps[0..(step_id - 1)].iter().all(|step: &ConfigStepWithStatus| {
+                step.status.visited || step.status.valid
+            })
+        }
+    };
+
+    let can_advance_active_step = use_memo(move || {
+        let step_id = active_step_id();
+        let all_steps = steps_with_status();
+        can_advance_to_step(step_id + 1, all_steps)
+    });
+
+    let mut advance_step = move || {
+        let all_steps = steps_with_status.peek();
+        if ! can_advance_to_step(*active_step_id.peek() + 1, all_steps.clone()) {
+            tracing::info!("Can't advance step");
+            return
+        }
+        let newval = {
+            1 + *active_step_id.peek()
+        };
+        active_step_id.set(newval);
+    };
+
+    let mut revert_step = move || {
+        if **&active_step_id.peek() == 0 {
+            return ;
+        }
+        active_step_id.set(active_step_id() - 1)
+    };
+
+    let mut set_active_step = {
+        let step_len = steps.len();
+        move |step_id: usize| {
+            let all_steps = steps_with_status.peek().clone();
+            if step_id >= 0 && step_id < step_len && can_advance_to_step(step_id, all_steps) {
+                active_step_id.set(step_id);
+            }
+        }
     };
 
     rsx! {
@@ -107,9 +170,10 @@ fn App() -> Element {
         div {
             class: "flex flex-row h-screen overflow-hidden",
             SetupProgressDrawer{
-                current_step: config_status(),
-                on_select_step: move |step: ConfigStep| if step < *config_status.peek() && step < ConfigStep::Startup {
-                    config_status.set(step)
+                steps: steps_with_status(),
+                current_step_id: active_step_id(),
+                on_select_step: move |step_id| {
+                    set_active_step(step_id);
                 }
             },
             main {
@@ -140,56 +204,48 @@ fn App() -> Element {
                             "{err}"
                         }
                     },
-                    if config_status() == ConfigStep::Startup {
-                        NcStartup {
-                            error
-                        }
-                    } else {
-                        if config_status() == ConfigStep::Welcome {
+                    match active_step() {
+                        ConfigStep::Welcome => rsx!(
                             CfgWelcome {
-                                on_continue: move |_| config_next(),
-                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
+                                on_continue: move |_| advance_step(),
                                 error
                             }
-                        } else if config_status() == ConfigStep::ConfigurePasswords {
-                            CredentialsConfig {
-                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
-                                on_continue: move |_| config_next(),
-                                on_back: move |_| config_back(),
-                                error
+                        ),
+                        ConfigStep::Credentials => rsx!(
+                            CfgCredentials {
+                                on_continue: move |_| advance_step(),
+                                on_back: move |_| revert_step(),
+                                error,
+                                config: *creds_config,
+                                status: creds_status
                             }
-                        } else if config_status() == ConfigStep::ConfigureNextcloud {
-                            NextcloudConfig {
-                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
-                                on_continue: move |_| config_next(),
-                                on_back: move |_| config_back(),
-                                error
+                        ),
+                        ConfigStep::Nextcloud => rsx!(
+                            CfgNextcloud {
+                                on_continue: move |_| advance_step(),
+                                on_back: move |_| revert_step(),
+                                error,
+                                config: nc_config,
+                                status: nc_status,
+                                nc_admin_password: nc_admin_pw()
                             }
-                        } else if config_status() == ConfigStep::ConfigureDisks {
+                        ),
+                        ConfigStep::Disks => rsx!(
                             CfgSetupStorage {
-                                on_validated: move |is_valid: bool| config_is_valid.set(is_valid),
-                                on_continue: move |_| config_next(),
-                                on_back: move |_| config_back(),
+                                on_continue: move |_| advance_step(),
+                                on_back: move |_| revert_step(),
+                                error,
+                                status: disks_status
+                            }
+                        ),
+                        ConfigStep::Startup => rsx!(
+                            NcStartup {
                                 error
                             }
-                        }
+                        )
                     }
                 }
             }
         },
     }
 }
-
-// #[derive(PartialEq, Clone, Props)]
-// struct SetupProgressDrawerProps {
-//     current_step: ConfigStep,
-//     on_select_step: EventHandler<ConfigStep>,
-//     #[props(default = String::default())]
-//     class: String,
-// }
-
-// fn select_step (step: ConfigStep, current_step: ConfigStep, on_select: EventHandler<ConfigStep>) {
-//     if current_step > step && current_step < ConfigStep::Startup {
-//     props.on_select_step.call(step);
-//     }
-// }
