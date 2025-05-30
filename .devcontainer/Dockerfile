@@ -1,7 +1,8 @@
 FROM purtontech/rust-on-nails-devcontainer:1.3.15 AS development
 ENV BINSTALL_NO_CONFIRM=yes
 RUN sudo apt update && sudo apt upgrade -y && sudo apt install -y --no-install-recommends libsystemd-dev pkg-config inotify-tools \
-    libwebkit2gtk-4.1-dev libatk1.0-dev libglib2.0-dev libcairo2-dev libgdk3.0-cil libpango1.0-dev libgdk-pixbuf2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+    libwebkit2gtk-4.1-dev libatk1.0-dev libglib2.0-dev libcairo2-dev libgdk3.0-cil libpango1.0-dev libgdk-pixbuf2.0-dev \
+    libsoup-3.0-dev libjavascriptcoregtk-4.1-dev && sudo apt install -y --install-recommends bash bash-completion zsh
 
 COPY ps1.bash .
 RUN cat ps1.bash >> ~/.bashrc && sudo rm ps1.bash
