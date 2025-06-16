@@ -431,6 +431,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base32"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "022dfe9eb35f19ebbcb51e0b40a5ab759f46ad60cadf7297e0bd085afb50e076"
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3307,22 +3313,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nca-api-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "nca-backend"
 version = "0.1.0"
 dependencies = [
  "axum",
  "axum-extra",
+ "base32",
  "dioxus",
  "grpc-journal",
  "grpc-occ",
  "http",
  "libsystemd",
+ "nca-api-model",
  "nca-caddy",
  "nca-error",
  "nca-system-api",
  "notify",
  "paspio",
  "rand 0.9.1",
+ "ring",
  "serde",
  "serde_json",
  "tokio",
@@ -3376,6 +3392,7 @@ dependencies = [
  "dioxus-logger",
  "getrandom 0.3.2",
  "http",
+ "nca-api-model",
  "nca-system-api",
  "paspio",
  "rand 0.9.1",

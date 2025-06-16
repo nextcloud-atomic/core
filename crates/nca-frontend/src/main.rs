@@ -13,7 +13,7 @@ use dioxus_free_icons::icons::hi_solid_icons;
 use dioxus_logger::tracing;
 use serde::{Deserialize, Serialize};
 use nca_frontend::layout::{Layout, SideBar};
-use nca_frontend::{assets, base_url, ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, NextcloudConfig, ServiceStatus};
+use nca_frontend::{assets, base_url, ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, ServicesConfig, ServiceStatus};
 use nca_frontend::components::{NcStartup, Logs};
 use web_sys::window;
 use reqwest::Client;
@@ -54,7 +54,7 @@ fn App() -> Element {
     // Application State
     let creds_config = Rc::new(use_signal(|| CredentialsConfig::new()));
     let creds_status = use_signal(|| ConfigStepStatus::new());
-    let nc_config = use_signal(|| NextcloudConfig::new());
+    let nc_config = use_signal(|| ServicesConfig::new());
     let nc_status = use_signal(|| ConfigStepStatus::new());
     let disks_status = use_signal(|| ConfigStepStatus::new());
     let startup_status = use_signal(|| ConfigStepStatus::new());

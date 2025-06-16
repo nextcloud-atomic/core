@@ -12,14 +12,16 @@ tokio = { version = "1", default-features = false, features = ["macros", "rt-mul
 tower-livereload = { version = "0.9" }
 grpc-journal = { version = "0.1.0", path = "../grpc-journal", features = ["default"] }
 tonic = { version = "0.12", default-features = true }
-tower = { version = "0.5.2", features = ["steer"] }
+tower = { version = "0.5.2", features = ["steer"], optional = true }
 tonic-web = { version = "0.12" }
 libsystemd = {workspace = true }
 nca-system-api = {path = "../nca-system-api", features = ["backend"] }
+nca-api-model = {path = "../nca-api-model"}
 grpc-occ = {path = "../grpc-occ", features = ["default"]}
 nca-caddy = {path = "../nca-caddy"}
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 notify = "8.0"
+ring = "0.17.14"
 
 http = "1.2.0"
 serde = { workspace = true, features = ["derive"] }
@@ -29,6 +31,7 @@ serde_json = "1.0.139"
 rand = { version = "0.9" }
 paspio = "1.0"
 url = "2.5"
+base32 = "0.5.1"
 
 
 [[bin]]
@@ -45,4 +48,4 @@ mock-systemd = []
 mock-occ = ["grpc-occ/mock"]
 mock-fs = []
 insecure = []
-watch = []
+watch = ["tower"]

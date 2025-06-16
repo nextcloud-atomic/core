@@ -2,17 +2,14 @@ pub mod layout;
 pub mod assets;
 pub mod components;
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use bytes::Bytes;
-use dioxus::prelude::Signal;
 use http::{StatusCode};
 use paspio::entropy;
 use rand::Rng;
 use reqwest::{Body, Response, Url};
 use serde::de::DeserializeOwned;
+use web_sys::window;
 pub use crate::components::*;
-// use web_sys::window;
 
 #[cfg(not(feature = "mock-backend"))]
 pub fn base_url() -> String {

@@ -6,12 +6,14 @@ use dioxus_free_icons::icons::hi_solid_icons;
 use daisy_rsx::*;
 use dioxus_logger::tracing;
 use rand::Rng;
+use nca_api_model::setup::CredentialsConfig as ApiCredentialsConfig;
 use crate::{base_url, do_post, check_is_secure_password, generate_secure_password, PasswordStrength, StepStatus, ConfigStepStatus};
 use crate::components::form::{InputField, PasswordFieldConfig, InputType};
 use std::rc::Rc;
 use daisy_rsx::accordian::AccordianProps;
 use dioxus::html::a::class;
 use serde::Serialize;
+use nca_api_model::setup;
 use crate::components::accordion::Accordion;
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
 use crate::configure_credentials_backup::{ConfigureCredentialsBackup, ConfigureCredentialsConfirm};
@@ -21,8 +23,9 @@ pub struct CredentialsConfig {
     pub salt: Option<String>,
     pub primary_password: Option<String>,
     pub nc_admin_password: Option<String>,
-    pub mfa_backup_codes: Option<[String; 16]>,
+    // pub mfa_backup_codes: Option<[String; 16]>,
     pub disk_encryption_password: Option<String>,
+    pub backup_encryption_password: Option<String>,
     pub backup_id: Option<String>,
 }
 
@@ -34,50 +37,72 @@ impl CredentialsConfig {
             nc_admin_password: None,
             backup_id: None,
             disk_encryption_password: None,
-            mfa_backup_codes: None,
+            backup_encryption_password: None,
+            // mfa_backup_codes: None,
             salt: None
         }
     }
-    #[cfg(feature = "mock-backend")]
-    fn derive_credentials_from_root_password(self) -> Self {
-        CredentialsConfig {
-            primary_password: self.primary_password,
-            nc_admin_password: Some(rand::rng()
-                .sample_iter(rand::distr::Alphanumeric)
-                .take(24).map(char::from)
-                .collect()),
-            salt : Some(rand::rng()
-                .sample_iter(rand::distr::Alphanumeric)
-                .take(12).map(char::from)
-                .collect()),
-            backup_id : Some(rand::rng()
-                .sample_iter(rand::distr::Alphanumeric)
-                .take(12).map(char::from)
-                .collect()),
-            disk_encryption_password: Some(rand::rng()
-                .sample_iter(rand::distr::Alphanumeric)
-                .take(24).map(char::from)
-                .collect()),
-            mfa_backup_codes : Some([0; 16].map( | _ | rand::rng()
-                .sample_iter(rand::distr::Alphanumeric)
-                .take(6).map(char::from)
-                .collect()))
-        }
 
-    }
+}
 
-    #[cfg(not(feature = "mock-backend"))]
-    fn derive_credentials_from_root_password(root_password: String) -> CredentialsConfig {
-        return CredentialsConfig {}
-    }
+#[cfg(feature = "mock-backend")]
+async fn derive_credentials_from_primary_password(primary_password: String, nc_admin_password: String) -> Result<CredentialsConfig, String> {
+    Ok(CredentialsConfig {
+        primary_password: self.primary_password,
+        nc_admin_password: Some(rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(24).map(char::from)
+            .collect()),
+        salt : Some(rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(12).map(char::from)
+            .collect()),
+        backup_id : Some(rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(12).map(char::from)
+            .collect()),
+        disk_encryption_password: Some(rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(24).map(char::from)
+            .collect()),
+        mfa_backup_codes : Some([0; 16].map( | _ | rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(6).map(char::from)
+            .collect()))
+    })
 
+}
+
+#[cfg(not(feature = "mock-backend"))]
+async fn derive_credentials_from_primary_password(primary_password: String, nc_admin_password: String) -> Result<CredentialsConfig, String> {
+    let request_url = format!("{}/api/setup/credentials", base_url());
+    let payload =  serde_json::to_string(&setup::CredentialsInitRequest{
+        primary_password: primary_password.clone(),
+        nextcloud_admin_password: nc_admin_password.clone()
+    }).map_err(|e| e.to_string())?;
+    let result = do_post(&request_url, payload, None).await.map_err(|e| e.to_string())?;
+
+    let credentials: ApiCredentialsConfig = result.json().await.map_err(|e| e.to_string())?;
+    tracing::info!("received credentials: {:?}", credentials);
+    Ok(CredentialsConfig {
+        nc_admin_password: Some(nc_admin_password),
+        primary_password: Some(primary_password),
+        salt: Some(credentials.salt),
+        // mfa_backup_codes: Some(credentials.mfa_backup_codes),
+        disk_encryption_password: Some(credentials.disk_encryption_password),
+        backup_encryption_password: Some(credentials.backup_password),
+        backup_id : Some(rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(12).map(char::from)
+            .collect()),
+    })
 }
 
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 enum CredentialsConfigStep {
     Passwords,
-    SecondFactor,
+    // SecondFactor,
     Backup,
     Verify,
     Summary
@@ -101,7 +126,8 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
         let mut newval = {
             config.peek().clone()
         };
-        if config.peek().primary_password != pw {
+        let peeked = config.peek().primary_password.clone();
+        if peeked != pw {
             newval.primary_password = pw;
             config.set(newval);
         }
@@ -141,29 +167,61 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
     let primary_password_strength = use_memo(move || check_is_secure_password(nca_primary_password_proxy()));
     let nc_admin_password_strength = use_memo(move || check_is_secure_password(nc_admin_password_proxy()));
 
-    let is_valid = use_memo(move ||
+    let is_valid = use_resource(move || async move {
         match cred_config_step() {
             CredentialsConfigStep::Passwords => {
-                if primary_password_strength() == PasswordStrength::Strong {
-                    let newval = config.peek().clone().derive_credentials_from_root_password();
-                    config.set(newval);
-                }
-                primary_password_strength() == PasswordStrength::Strong && nc_admin_password_strength() == PasswordStrength::Strong
+                primary_password_strength() == PasswordStrength::Strong
+                    && nc_admin_password_strength() == PasswordStrength::Strong
             },
-            CredentialsConfigStep::SecondFactor => true,
+            // CredentialsConfigStep::SecondFactor => true,
             CredentialsConfigStep::Backup => is_backup_complete(),
             CredentialsConfigStep::Verify => are_credentials_confirmed(),
             CredentialsConfigStep::Summary => true
         }
-    );
+    });
 
     let propagate_validation = use_effect(move || status.set({
-        tracing::info!("config is '{}', updating status", is_valid());
+        tracing::info!("config is '{:?}', updating status", is_valid());
         let is_valid = is_valid();
-        let is_complete = is_valid && is_backup_complete() && are_credentials_confirmed();
+        let is_complete = is_valid.unwrap_or(false) && is_backup_complete() && are_credentials_confirmed();
         let old = status.peek();
-        old.with_valid(is_valid).with_completed(is_complete)
+        old.with_valid(is_valid.unwrap_or(false)).with_completed(is_complete)
     }));
+
+    let advance = use_callback(move |evt: MouseEvent| async move {
+        let next_step = match *cred_config_step.peek() {
+            CredentialsConfigStep::Passwords => CredentialsConfigStep::Backup,
+            CredentialsConfigStep::Backup => CredentialsConfigStep::Verify,
+            CredentialsConfigStep::Verify => CredentialsConfigStep::Summary,
+            CredentialsConfigStep::Summary => {
+                on_continue.call(evt);
+                return;
+            }
+        };
+        if *cred_config_step.peek() == CredentialsConfigStep::Passwords {
+            let config_clone = config.peek().clone();
+            match (config_clone.primary_password, config_clone.nc_admin_password) {
+                (Some(primary_password), Some(nc_admin_password)) => {
+                    let result = derive_credentials_from_primary_password(primary_password, nc_admin_password).await;
+                    match result {
+                        Ok(newval) => {
+                            config.set(newval);
+                            cred_config_step.set(next_step);
+                        },
+                        Err(e) => {
+                            error.set(Some(format!("Failed to save passwords: {}", e)));
+                        }
+                    }
+                },
+                _ => {
+                    error.set(Some("primary password or nextcloud admin password is unset!".to_string()));
+                }
+            }
+        } else {
+            cred_config_step.set(next_step);
+        }
+    }
+    );
 
     let success_icon = || {
         rsx!(Icon {
@@ -195,11 +253,6 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
             },
             li {
                 class: "step",
-                class: if cred_config_step() >= CredentialsConfigStep::SecondFactor { "step-primary" },
-                "2nd Factor"
-            },
-            li {
-                class: "step",
                 class: if cred_config_step() >= CredentialsConfigStep::Backup { "step-primary" },
                 "Emergency Backup"
             },
@@ -223,8 +276,8 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
                             on_back.call(evt);
                             return;
                         },
-                        CredentialsConfigStep::SecondFactor => CredentialsConfigStep::Passwords,
-                        CredentialsConfigStep::Backup => CredentialsConfigStep::SecondFactor,
+                        // CredentialsConfigStep::SecondFactor => CredentialsConfigStep::Passwords,
+                        CredentialsConfigStep::Backup => CredentialsConfigStep::Passwords,
                         CredentialsConfigStep::Verify => CredentialsConfigStep::Backup,
                         CredentialsConfigStep::Summary => CredentialsConfigStep::Verify,
                     };
@@ -234,20 +287,10 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
             }),
             continue_button: rsx!(ConfigStepContinueButton{
                 on_click: move |evt| {
-                    let next_step = match *cred_config_step.peek() {
-                        CredentialsConfigStep::Passwords => CredentialsConfigStep::SecondFactor,
-                        CredentialsConfigStep::SecondFactor => CredentialsConfigStep::Backup,
-                        CredentialsConfigStep::Backup => CredentialsConfigStep::Verify,
-                        CredentialsConfigStep::Verify => CredentialsConfigStep::Summary,
-                        CredentialsConfigStep::Summary => {
-                            on_continue.call(evt);
-                            return;
-                        }
-                    };
-                    cred_config_step.set(next_step);
+                    advance(evt)
                 },
                 button_text: "Continue",
-                disabled: !is_valid()
+                disabled: !is_valid().unwrap_or(false)
             }),
             div {
                 class: "flex-none p-2",
@@ -329,10 +372,6 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
                         },
                         // }
                     },
-                } else if cred_config_step() == CredentialsConfigStep::SecondFactor {
-                    CredentialsConfigTotp {
-
-                    }
                 } else if cred_config_step() == CredentialsConfigStep::Backup {
                     ConfigureCredentialsBackup {
                         credentials: config(),
@@ -357,17 +396,14 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
 #[component]
 pub fn CredentialsConfigSummary(credentials: CredentialsConfig) -> Element {
     let mut salt = use_signal(|| "".to_string());
-    let mut backup_password = use_signal(|| "".to_string());
+    // let mut backup_id = use_signal(|| "".to_string());
+    let mut backup_encryption_password = use_signal(|| "".to_string());
     let mut disk_encryption_password = use_signal(|| "".to_string());
-    let mut mfa_backup_codes = use_signal(|| "".to_string());
     use_effect(move || {
         salt.set(credentials.salt.clone().unwrap_or(String::default()));
-        backup_password.set(credentials.backup_id.clone().unwrap_or(String::default()));
+        // backup_id.set(credentials.backup_id.clone().unwrap_or(String::default()));
+        backup_encryption_password.set(credentials.backup_encryption_password.clone().unwrap_or(String::default()));
         disk_encryption_password.set(credentials.disk_encryption_password.clone().unwrap_or(String::default()));
-        mfa_backup_codes.set(match credentials.mfa_backup_codes.clone() {
-            Some(codes) => codes.join(" "),
-            None => String::default()
-        });
     });
 
     rsx! {
@@ -398,23 +434,13 @@ pub fn CredentialsConfigSummary(credentials: CredentialsConfig) -> Element {
         InputField {
             r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
             disabled: true,
-            title: "Backup Password",
+            title: "Backup Encryption Password",
             label: rsx!(div {
-                "This password is used to encrypt Nextcloud Atomic backups. You will need it to access your backups"
+                "This password is used to encrypt Nextcloud Atomic's incremental backups. You will need it to access your backups manually (or from a fresh Nextcloud Atomic Instance)"
             }),
-            value: backup_password,
+            value: backup_encryption_password,
             enable_copy_button: true,
         },
-        InputField {
-            r#type: InputType::Password(PasswordFieldConfig{hide: false, generator: false, password_strength: None}),
-            disabled: true,
-            title: "2nd Factor Backup Codes",
-            label: rsx!(div {
-                "These codes can be used if you lose access to your 2nd factor (e.g. your phone) for logging into Nextcloud Atomic"
-            }),
-            value: mfa_backup_codes,
-            enable_copy_button: true,
-        }
     }
 }
 

@@ -8,6 +8,7 @@ use dioxus_free_icons::{Icon, IconShape};
 use dioxus_free_icons::icons::hi_outline_icons;
 use dioxus_free_icons::icons::hi_solid_icons;
 use http::StatusCode;
+use serde::Serialize;
 use crate::components::form::{InputField, InputType, PasswordFieldConfig};
 use crate::{base_url, check_is_secure_password, do_post, ConfigStepStatus, HttpResponse, MockResponse, PasswordStrength, StepStatus};
 use crate::components::configure_configstep::{CfgConfigStep, ConfigStepContinueButton};
@@ -19,17 +20,18 @@ use crate::configure_credentials::CredentialsConfig;
 // }
 
 #[cfg(not(feature = "mock-backend"))]
-async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_password: String) -> Result<HttpResponse, reqwest::Error> {
+async fn configure_nextcloud_credentials(nextcloud_domain: String, admin_domain: String, nc_admin_password: String) -> Result<HttpResponse, String> {
     let request_url = format!("{}/api/setup/configure", base_url());
-    let payload = json!({
-        "nextcloud_domain": nc_domain,
-        "nextcloud_password": nc_admin_password
-    });
-    do_post(&request_url, payload.to_string(), None).await
+    let payload = serde_json::to_string(&nca_api_model::setup::ServicesConfig {
+        admin_domain,
+        nextcloud_domain,
+        nextcloud_password: nc_admin_password
+    }).map_err(|e| e.to_string())?;
+    do_post(&request_url, payload, None).await.map_err(|e| e.to_string())
 }
 
 #[cfg(feature = "mock-backend")]
-async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_password: String) -> Result<HttpResponse, reqwest::Error> {
+async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_password: String) -> Result<HttpResponse, String> {
     let request_url = format!("{}/api/setup/configure", base_url());
     
     let resp = MockResponse{
@@ -41,15 +43,17 @@ async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_pas
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct NextcloudConfig {
-    domain: String,
+pub struct ServicesConfig {
+    nextcloud_domain: String,
+    admin_domain: String,
     status: ConfigStepStatus
 }
 
-impl NextcloudConfig {
+impl ServicesConfig {
     pub fn new() -> Self {
-        NextcloudConfig {
-            domain: "localhost".to_string(),
+        ServicesConfig {
+            nextcloud_domain: "localhost".to_string(),
+            admin_domain: window().unwrap().location().hostname().unwrap(),
             status: ConfigStepStatus::new()
         }
     }
@@ -65,7 +69,7 @@ pub fn CfgNextcloud(
     error: Signal<Option<String>>,
     on_back: EventHandler<MouseEvent>,
     on_continue: EventHandler<MouseEvent>,
-    config: Signal<NextcloudConfig>,
+    config: Signal<ServicesConfig>,
     status: Signal<ConfigStepStatus>,
     nc_admin_password: String
 ) -> Element {
@@ -77,6 +81,7 @@ pub fn CfgNextcloud(
 
     // let mut nc_admin_password = use_signal(|| "".to_string());
     let nc_domain = use_signal(|| window().unwrap().location().hostname().unwrap());
+    let admin_domain = use_signal(|| window().unwrap().location().hostname().unwrap());
     // let nc_admin_password_strength = use_signal(|| check_is_secure_password(nc_admin_password()));
 
 
@@ -101,6 +106,16 @@ pub fn CfgNextcloud(
                         "The domain where Nextcloud will be accessible.",
                     }),
                     value: nc_domain,
+                    enable_copy_button: false,
+                    prefix: rsx!(b {"https://"})
+                },
+                InputField {
+                    r#type: InputType::Text,
+                    title: "Admin URL",
+                    label: rsx!(div {
+                        "The domain where the admin interface will be accessible.",
+                    }),
+                    value: admin_domain,
                     enable_copy_button: false,
                     prefix: rsx!(b {"https://"})
                 },
@@ -138,31 +153,40 @@ pub fn CfgNextcloud(
                             //     error.set(Some("Error: The configured password is insecure!".to_string()));
                             //     return;
                             // }
-                            if let Ok(nc_url) = Url::parse(&format!("https://{}/", nc_domain.peek().to_string())) {
-                                let request_url = format!("{}/api/setup/configure", base_url());
-                                let payload = json!({
-                                        "nextcloud_domain": nc_url.host_str(),
-                                        "nextcloud_password": admin_pw
-                                    });
-                                match configure_nextcloud_credentials(
-                                    nc_url.host_str().and_then(|s| Some(s.to_string())), 
-                                    admin_pw).await {
-                                    Err(e) => {
-                                        tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
-                                        error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
-                                    },
-                                    Ok(response) => {
-                                        if !response.status().is_success() {
-                                            let msg = format!("ERROR: Configuring Nextcloud Atomic failed (http status: {}): {}",
-                                                response.status().as_str(),
-                                                response.text().await.unwrap_or(String::from("no response body received")));
-                                            tracing::error!("{}", msg);
-                                            error.set(Some(msg));
-                                            return;
+                            if let (Ok(nc_url), Ok(admin_url)) = (
+                                Url::parse(&format!("https://{}/", nc_domain.peek().to_string())),
+                                Url::parse(&format!("https://{}/", admin_domain.peek().to_string()))
+                            ) {
+                                if let (Some(nc_host), Some(admin_host)) = (
+                                    nc_url.host_str(),
+                                    admin_url.host_str()
+                                ) {
+                                    let request_url = format!("{}/api/setup/configure", base_url());
+                                    match configure_nextcloud_credentials(
+                                        nc_host.to_string(),
+                                        admin_host.to_string(),
+                                        admin_pw
+                                    ).await {
+                                        Err(e) => {
+                                            tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
+                                            error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
+                                        },
+                                        Ok(response) => {
+                                            if !response.status().is_success() {
+                                                let msg = format!("ERROR: Configuring Nextcloud Atomic failed (http status: {}): {}",
+                                                    response.status().as_str(),
+                                                    response.text().await.unwrap_or(String::from("no response body received")));
+                                                tracing::error!("{}", msg);
+                                                error.set(Some(msg));
+                                                return;
+                                            }
+                                            tracing::info!("configuration completed successfully");
+                                            status.set(status().with_valid(true).with_completed(true))
                                         }
-                                        tracing::info!("configuration completed successfully");
-                                        status.set(status().with_valid(true).with_completed(true))
                                     }
+                                    
+                                } else {
+                                    error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
                                 }
                             } else {
                                 error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));

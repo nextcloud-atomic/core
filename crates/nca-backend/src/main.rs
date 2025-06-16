@@ -1,7 +1,11 @@
 #![allow(non_snake_case)]
 
 use std::collections::HashMap;
-use std::path::Path;
+#[cfg(feature = "watch")]
+use {
+    std::path::Path,
+    tower_livereload::LiveReloadLayer,
+};
 #[cfg(feature = "mock-systemd")]
 use {
     std::sync::{Arc, Mutex},
@@ -14,11 +18,11 @@ use dioxus::prelude::*;
 mod config;
 mod api_routes;
 mod middleware;
+mod crypto;
 
 use {
     axum::{extract::Extension, routing::get, ServiceExt},
     libsystemd::daemon::NotifyState,
-    tower_livereload::LiveReloadLayer,
     grpc_journal::{
         journal_stream::JournalLogStreamService,
         api::journal_log_stream_server::JournalLogStreamServer
@@ -30,7 +34,7 @@ use {
 use notify::Watcher;
 use nca_caddy::CaddyClient;
 use nca_caddy::config::builders::create_nca_setup_server_json;
-use crate::api_routes::{activate_endpoint_nextcloud, configure_nextcloud_atomic};
+use crate::api_routes::{activate_endpoint_nextcloud, configure_nextcloud_atomic, generate_credentials};
 use crate::middleware::require_setup_not_complete;
 
 #[tokio::main]
@@ -56,6 +60,7 @@ async fn main() {
 
     let mut setup_router = Router::new()
         .route("/configure", post(configure_nextcloud_atomic))
+        .route("/credentials", post(generate_credentials))
         .route("/caddy/endpoint/enable/nextcloud", post(activate_endpoint_nextcloud))
         .route("/service/*name", service_status_route);
 

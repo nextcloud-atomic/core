@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::hi_solid_icons;
 use dioxus_logger::tracing;
-use crate::{ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, NextcloudConfig, StepStatus};
+use crate::{ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, ServicesConfig, StepStatus};
 use crate::configure_credentials::CredentialsConfig;
 
 

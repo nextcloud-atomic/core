@@ -42,7 +42,6 @@ pub mod types {
 pub mod api {
     use std::io::Write;
     use std::process::Stdio;
-    use std::ptr::write;
     use zbus_systemd::{zbus, systemd1::ManagerProxy};
     use nca_error::NcaError;
     use libsystemd::daemon;
@@ -56,7 +55,7 @@ pub mod api {
         let manager = ManagerProxy::new(&conn).await?;
 
         let unit_obj_path = manager.get_unit(name).await?;
-        let props = PropertiesProxy::new(&conn, "org.freedesktop.systemd1", &unit_obj_path).await?;
+        let props = PropertiesProxy::new(&conn, "org.freedesktop.systemd1", unit_obj_path).await?;
         let active_state = props.get(InterfaceName::from_static_str("org.freedesktop.systemd1.Unit")?, "ActiveState").await?;
 
         active_state.to_string().parse()

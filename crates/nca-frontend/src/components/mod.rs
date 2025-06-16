@@ -14,4 +14,4 @@ pub mod configure_credentials_backup;
 pub use logs::Logs;
 pub use service_status::ServiceStatus;
 pub use nc_startup::NcStartup;
-pub use configure_nextcloud::NextcloudConfig;
+pub use configure_nextcloud::ServicesConfig;
