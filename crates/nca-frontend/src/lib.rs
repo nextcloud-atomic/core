@@ -21,7 +21,7 @@ pub fn base_url() -> String {
 }
 
 #[derive(Debug)]
-pub(crate) struct HttpResponse {
+pub struct HttpResponse {
     _inner: HttpResponseWrapper
 }
 
@@ -143,12 +143,22 @@ struct MockResponse {
     url: Url
 }
 
-pub(crate) async fn do_post<T: Into<Body>>(request_url: &str, body: T, content_type: Option<&str>) -> Result<HttpResponse, reqwest::Error> {
+pub async fn do_post<T: Into<Body>>(request_url: &str, body: T, content_type: Option<&str>) -> Result<HttpResponse, reqwest::Error> {
     let client = reqwest::Client::new();
     client
         .post(request_url)
         .header("Content-Type", content_type.unwrap_or("application/json"))
         .body(body.into())
+        .send()
+        .await
+        .map(|r| r.into())
+}
+
+pub async fn do_get(request_url: &str, content_type: Option<&str>) -> Result<HttpResponse, reqwest::Error> {
+    let client = reqwest::Client::new();
+    client
+        .get(request_url)
+        .header("Content-Type", content_type.unwrap_or("application/json"))
         .send()
         .await
         .map(|r| r.into())

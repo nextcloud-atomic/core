@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::thread::Scope;
 use dioxus::document;
 use dioxus::hooks::{use_coroutine, use_signal, UnboundedReceiver};
 use dioxus::prelude::*;

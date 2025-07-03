@@ -8,11 +8,12 @@
     "@parcel/transformer-sass": "^2.13.3",
     "@protobuf-ts/grpcweb-transport": "^2.9.4",
     "@protobuf-ts/plugin": "^2.9.4",
+    "daisyui": "^5.0.43",
     "parcel": "^2.13.3"
   },
   "dependencies": {
-    "@tailwindcss/cli": "^4.0.9",
-    "daisyui": "^5.0.0-beta.8",
-    "tailwindcss": "^4.0.9"
+    "@tailwindcss/cli": "^4.1.11",
+    "@tailwindcss/typography": "^0.5.16",
+    "tailwindcss": "^4.1.11"
   }
 }

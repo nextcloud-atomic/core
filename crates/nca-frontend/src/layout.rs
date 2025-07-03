@@ -1,16 +1,7 @@
 #![allow(non_snake_case)]
 
-use std::collections::HashMap;
-use std::thread::sleep;
-use std::time::Duration;
 use daisy_rsx::*;
-use dioxus::document::EvalError;
 use dioxus::prelude::*;
-use dioxus_logger::tracing;
-use crate::assets;
-use reqwest;
-use nca_system_api::systemd::types;
-use web_sys::{window, Document};
 // use web_sys::wasm_bindgen::JsValue;
 // use web_sys::wasm_bindgen::prelude::wasm_bindgen;
 // use web_assets::files::index_js;

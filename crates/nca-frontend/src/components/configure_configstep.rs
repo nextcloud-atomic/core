@@ -36,6 +36,8 @@ pub fn CfgConfigStep(props: ConfigStepProps) -> Element {
 pub struct ContinueButtonProps {
     #[props(default = false)]
     disabled: bool,
+    #[props(default = false)]
+    advancement_in_progress: bool,
     on_click: EventHandler<MouseEvent>,
     button_text: String,
 
@@ -47,10 +49,15 @@ pub fn ConfigStepContinueButton(props: ContinueButtonProps) -> Element {
     rsx! {
         button {
             class: "btn btn-primary",
-            disabled: props.disabled,
+            disabled: props.disabled || props.advancement_in_progress,
             r#type: "submit",
             onclick: move |evt| props.on_click.call(evt),
-            { props.button_text }
+            if props.advancement_in_progress {
+                span {
+                    class: "loading loading-spinner"
+                }
+            },
+            { props.button_text },
         }
     }
 

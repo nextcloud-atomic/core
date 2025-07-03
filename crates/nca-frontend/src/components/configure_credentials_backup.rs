@@ -5,12 +5,12 @@ use dioxus_logger::tracing;
 use web_sys::{js_sys, wasm_bindgen, window, Url};
 use crate::components::accordion::Accordion;
 use crate::components::form::{InputField, InputType, PasswordFieldConfig};
-use crate::ConfigStepStatus;
+use crate::{base_url, do_post, ConfigStepStatus};
 use crate::configure_credentials::CredentialsConfig;
 
-
 #[component]
-pub fn ConfigureCredentialsBackup(credentials: CredentialsConfig, mut is_backup_complete: Signal<bool>) -> Element {
+pub fn ConfigureCredentialsBackup(credentials: CredentialsConfig,
+                                  mut is_backup_complete: Signal<bool>) -> Element {
 
     tracing::info!("credentials: {:?}", credentials.clone());
 
@@ -132,7 +132,8 @@ pub fn ConfigureCredentialsBackup(credentials: CredentialsConfig, mut is_backup_
 }
 
 #[component]
-pub(crate) fn ConfigureCredentialsConfirm(credentials: CredentialsConfig, is_confirmed: Signal<bool>) -> Element {
+pub(crate) fn ConfigureCredentialsConfirm(credentials: CredentialsConfig,
+                                          is_confirmed: Signal<bool>) -> Element {
     let mut backup_id = use_signal(|| "".to_string());
     let mut primary_pw = use_signal(|| "".to_string());
 
@@ -145,7 +146,6 @@ pub(crate) fn ConfigureCredentialsConfirm(credentials: CredentialsConfig, is_con
     let check_is_valid = use_effect(move || {
         is_confirmed.set(Some(backup_id()) == credentials.backup_id && Some(primary_pw()) == credentials.primary_password)
     });
-
 
     rsx! {
         InputField {

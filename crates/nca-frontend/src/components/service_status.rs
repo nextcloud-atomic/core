@@ -19,6 +19,8 @@ pub struct ServiceStatusProps {
     on_api_error: Option<Element>,
     error_action: Option<Element>,
     success_action: Option<Element>,
+    #[props(default = false)]
+    success_action_in_progress: bool,
 }
 
 pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
@@ -29,21 +31,23 @@ pub fn ServiceStatus(props: ServiceStatusProps) -> Element {
         to_owned![service_status];
         let request_url = format!("{}/api/setup/service/{}.service", base_url(), service_name.peek());
         loop {
-            tracing::info!("requesting {}", request_url);
-            let status = match reqwest::get(&request_url).await {
-                Err(e) => {
-                    tracing::error!("Failed to retrieve service status: {:?}", e);
-                    None
-                },
-                Ok(response) => match response.json::<nca_system_api::systemd::types::ServiceStatus>().await {
+            if !props.success_action_in_progress {
+                tracing::info!("requesting {}", request_url);
+                let status = match reqwest::get(&request_url).await {
                     Err(e) => {
-                        tracing::error!("Failed to parse service status response: {:?}", e);
+                        tracing::error!("Failed to retrieve service status: {:?}", e);
                         None
                     },
-                    Ok(status) => Some(status)
-                }
-            };
-            service_status.set(status);
+                    Ok(response) => match response.json::<nca_system_api::systemd::types::ServiceStatus>().await {
+                        Err(e) => {
+                            tracing::error!("Failed to parse service status response: {:?}", e);
+                            None
+                        },
+                        Ok(status) => Some(status)
+                    }
+                };
+                service_status.set(status);
+            }
             async_std::task::sleep(Duration::from_secs(5)).await;
         };
     });

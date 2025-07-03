@@ -13,14 +13,13 @@ use dioxus_free_icons::icons::hi_solid_icons;
 use dioxus_logger::tracing;
 use serde::{Deserialize, Serialize};
 use nca_frontend::layout::{Layout, SideBar};
-use nca_frontend::{assets, base_url, ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, ServicesConfig, ServiceStatus};
+use nca_frontend::{assets, base_url, ConfigStep, ConfigStepStatus, ConfigStepWithStatus, GenericStep, ServicesConfig, ServiceStatus, do_get};
 use nca_frontend::components::{NcStartup, Logs};
 use web_sys::window;
 use reqwest::Client;
 use serde_json::json;
 use strum::IntoEnumIterator;
 use strum::EnumIter;
-use nca_system_api::systemd::types::ServiceStatus;
 use nca_frontend::{StepStatus};
 // use nca_frontend::ConfigStep::*;
 use nca_frontend::configure_credentials::{CfgCredentials, CredentialsConfig, CredentialsConfigTotp};
@@ -46,6 +45,19 @@ async fn receive_js_messages(sender: tokio::sync::mpsc::Sender<String>, mut eval
             break;
         }
     }
+}
+
+
+#[cfg(feature = "mock-backend")]
+async fn complete_credentials_setup() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(feature = "mock-backend"))]
+async fn complete_credentials_setup() -> Result<(), String> {
+    let request_url = format!("{}/api/setup/credentials/complete", base_url());
+    do_get(&request_url, None).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[component]
@@ -104,7 +116,7 @@ fn App() -> Element {
 
 
     // let is_active_step_completed = use_memo(move || active_step().completed());
-    let error: Signal<Option<String>> = use_signal(|| None);
+    let mut error: Signal<Option<String>> = use_signal(|| None);
 
     let can_advance_to_step = {
         let steps_len = steps.len();
@@ -161,6 +173,17 @@ fn App() -> Element {
         }
     };
 
+    let complete_credentials_backup = use_callback(move |_evt| async move {
+        match complete_credentials_setup().await {
+            Ok(_) => {
+                advance_step();
+            },
+            Err(msg) => {
+                error.set(Some(msg));
+            }
+        }
+    });
+
     rsx! {
 
         Stylesheet { href: asset!("assets/css/style.css") }
@@ -178,7 +201,7 @@ fn App() -> Element {
             },
             main {
                 id: "main-content",
-                class: "flex-1 flex flex-col h-full",
+                class: "grow flex flex-col h-full",
                 // header {
                 //     class: "flex items-center p-4 border-b border-base-300",
                 //     nav {
@@ -196,7 +219,7 @@ fn App() -> Element {
                 //     }
                 // },
                 section {
-                    class: "flex flex-col flex-1 min-h-0",
+                    class: "flex flex-col grow min-h-0",
                     if let Some(err) = error.read().deref() {
                         div {
                             role: "alert",
@@ -213,7 +236,7 @@ fn App() -> Element {
                         ),
                         ConfigStep::Credentials => rsx!(
                             CfgCredentials {
-                                on_continue: move |_| advance_step(),
+                                on_continue: move |evt| complete_credentials_backup(evt),
                                 on_back: move |_| revert_step(),
                                 error,
                                 config: *creds_config,

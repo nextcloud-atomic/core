@@ -31,7 +31,7 @@ async fn configure_nextcloud_credentials(nextcloud_domain: String, admin_domain:
 }
 
 #[cfg(feature = "mock-backend")]
-async fn configure_nextcloud_credentials(nc_domain: Option<String>, nc_admin_password: String) -> Result<HttpResponse, String> {
+async fn configure_nextcloud_credentials(nc_domain: String, admin_domain: String, nc_admin_password: String) -> Result<HttpResponse, String> {
     let request_url = format!("{}/api/setup/configure", base_url());
     
     let resp = MockResponse{
@@ -74,6 +74,9 @@ pub fn CfgNextcloud(
     nc_admin_password: String
 ) -> Element {
 
+    // let location = std::panic::Location::caller();
+    // let (rc, mut changed) = ReactiveContext::new_with_origin(location);
+
     use_effect(move || status.set({
         let old = status.peek();
         old.with_visited(true)
@@ -84,6 +87,7 @@ pub fn CfgNextcloud(
     let admin_domain = use_signal(|| window().unwrap().location().hostname().unwrap());
     // let nc_admin_password_strength = use_signal(|| check_is_secure_password(nc_admin_password()));
 
+    let mut advancement_in_progress = use_signal(|| false);
 
     rsx! {
         CfgConfigStep {
@@ -92,9 +96,61 @@ pub fn CfgNextcloud(
                 button_text: "Back"
             }),
             continue_button: rsx!(ConfigStepContinueButton{
-                on_click: on_continue,
+                advancement_in_progress: advancement_in_progress(),
+                on_click: move |evt| {
+                    advancement_in_progress.set(true);
+                    let admin_pw = nc_admin_password.clone();
+                    async move {
+                        // if check_is_secure_password(nc_admin_password.peek().to_string()) != PasswordStrength::Strong {
+                        //     error.set(Some("Error: The configured password is insecure!".to_string()));
+                        //     return;
+                        // }
+                        if let (Ok(nc_url), Ok(admin_url)) = (
+                            Url::parse(&format!("https://{}/", nc_domain.peek().to_string())),
+                            Url::parse(&format!("https://{}/", admin_domain.peek().to_string()))
+                        ) {
+                            if let (Some(nc_host), Some(admin_host)) = (
+                                nc_url.host_str(),
+                                admin_url.host_str()
+                            ) {
+                                let request_url = format!("{}/api/setup/configure", base_url());
+                                match configure_nextcloud_credentials(
+                                    nc_host.to_string(),
+                                    admin_host.to_string(),
+                                    admin_pw
+                                ).await {
+                                    Err(e) => {
+                                        tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
+                                        error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
+                                    },
+                                    Ok(response) => {
+                                        if !response.status().is_success() {
+                                            let msg = format!("ERROR: Configuring Nextcloud Atomic failed (http status: {}): {}",
+                                                response.status().as_str(),
+                                                response.text().await.unwrap_or(String::from("no response body received")));
+                                            tracing::error!("{}", msg);
+                                            error.set(Some(msg));
+                                            return;
+                                        }
+                                        tracing::info!("configuration completed successfully");
+                                        status.set(status().with_valid(true).with_completed(true));
+
+                                        queue_effect(move || on_continue.call(evt));
+                                    }
+                                }
+
+                            } else {
+                                error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
+                            }
+                        } else {
+                            error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
+                        }
+
+                        advancement_in_progress.set(false);
+                    }
+                },
                 button_text: "Continue",
-                disabled: !status().valid
+                // disabled: !status().valid
             }),
             div {
                 class: "block max-w-4xl mx-auto grid center gap-4",
@@ -141,66 +197,66 @@ pub fn CfgNextcloud(
                 //         },)
                 // },
     
-                button {
-                    class: "btn btn-primary",
-                    r#type: "submit",
-                    onclick:  move |evt: Event<MouseData>| {
-                        evt.prevent_default();
-                        evt.stop_propagation();
-                        let admin_pw = nc_admin_password.clone();
-                        async move {
-                            // if check_is_secure_password(nc_admin_password.peek().to_string()) != PasswordStrength::Strong {
-                            //     error.set(Some("Error: The configured password is insecure!".to_string()));
-                            //     return;
-                            // }
-                            if let (Ok(nc_url), Ok(admin_url)) = (
-                                Url::parse(&format!("https://{}/", nc_domain.peek().to_string())),
-                                Url::parse(&format!("https://{}/", admin_domain.peek().to_string()))
-                            ) {
-                                if let (Some(nc_host), Some(admin_host)) = (
-                                    nc_url.host_str(),
-                                    admin_url.host_str()
-                                ) {
-                                    let request_url = format!("{}/api/setup/configure", base_url());
-                                    match configure_nextcloud_credentials(
-                                        nc_host.to_string(),
-                                        admin_host.to_string(),
-                                        admin_pw
-                                    ).await {
-                                        Err(e) => {
-                                            tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
-                                            error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
-                                        },
-                                        Ok(response) => {
-                                            if !response.status().is_success() {
-                                                let msg = format!("ERROR: Configuring Nextcloud Atomic failed (http status: {}): {}",
-                                                    response.status().as_str(),
-                                                    response.text().await.unwrap_or(String::from("no response body received")));
-                                                tracing::error!("{}", msg);
-                                                error.set(Some(msg));
-                                                return;
-                                            }
-                                            tracing::info!("configuration completed successfully");
-                                            status.set(status().with_valid(true).with_completed(true))
-                                        }
-                                    }
-                                    
-                                } else {
-                                    error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
-                                }
-                            } else {
-                                error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
-                            }
-                        }
-                    },
-                    "Apply",
-                    Icon {
-                        icon: hi_solid_icons::HiArrowRight,
-                        // size: 30,
-                        height: 30,
-                        width: 30
-                    },
-                }
+                // button {
+                //     class: "btn btn-primary",
+                //     r#type: "submit",
+                //     onclick:  move |evt: Event<MouseData>| {
+                //         evt.prevent_default();
+                //         evt.stop_propagation();
+                //         let admin_pw = nc_admin_password.clone();
+                //         async move {
+                //             // if check_is_secure_password(nc_admin_password.peek().to_string()) != PasswordStrength::Strong {
+                //             //     error.set(Some("Error: The configured password is insecure!".to_string()));
+                //             //     return;
+                //             // }
+                //             if let (Ok(nc_url), Ok(admin_url)) = (
+                //                 Url::parse(&format!("https://{}/", nc_domain.peek().to_string())),
+                //                 Url::parse(&format!("https://{}/", admin_domain.peek().to_string()))
+                //             ) {
+                //                 if let (Some(nc_host), Some(admin_host)) = (
+                //                     nc_url.host_str(),
+                //                     admin_url.host_str()
+                //                 ) {
+                //                     let request_url = format!("{}/api/setup/configure", base_url());
+                //                     match configure_nextcloud_credentials(
+                //                         nc_host.to_string(),
+                //                         admin_host.to_string(),
+                //                         admin_pw
+                //                     ).await {
+                //                         Err(e) => {
+                //                             tracing::error!("ERROR: Configuring Nextcloud Atomic failed: {e:?}");
+                //                             error.set(Some(format!("Error: Configurating Nextcloud Atomic failed; {}", e)));
+                //                         },
+                //                         Ok(response) => {
+                //                             if !response.status().is_success() {
+                //                                 let msg = format!("ERROR: Configuring Nextcloud Atomic failed (http status: {}): {}",
+                //                                     response.status().as_str(),
+                //                                     response.text().await.unwrap_or(String::from("no response body received")));
+                //                                 tracing::error!("{}", msg);
+                //                                 error.set(Some(msg));
+                //                                 return;
+                //                             }
+                //                             tracing::info!("configuration completed successfully");
+                //                             status.set(status().with_valid(true).with_completed(true))
+                //                         }
+                //                     }
+                //
+                //                 } else {
+                //                     error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
+                //                 }
+                //             } else {
+                //                 error.set(Some(format!("Error: '{}' is not a valid domain", nc_domain.peek().to_string())));
+                //             }
+                //         }
+                //     },
+                //     "Apply",
+                //     Icon {
+                //         icon: hi_solid_icons::HiArrowRight,
+                //         // size: 30,
+                //         height: 30,
+                //         width: 30
+                //     },
+                // }
             }
         }
     }

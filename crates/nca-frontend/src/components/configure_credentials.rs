@@ -6,7 +6,7 @@ use dioxus_free_icons::icons::hi_solid_icons;
 use daisy_rsx::*;
 use dioxus_logger::tracing;
 use rand::Rng;
-use nca_api_model::setup::CredentialsConfig as ApiCredentialsConfig;
+use nca_api_model::setup::CredentialsInitResponse as ApiCredentialsConfig;
 use crate::{base_url, do_post, check_is_secure_password, generate_secure_password, PasswordStrength, StepStatus, ConfigStepStatus};
 use crate::components::form::{InputField, PasswordFieldConfig, InputType};
 use std::rc::Rc;
@@ -48,7 +48,7 @@ impl CredentialsConfig {
 #[cfg(feature = "mock-backend")]
 async fn derive_credentials_from_primary_password(primary_password: String, nc_admin_password: String) -> Result<CredentialsConfig, String> {
     Ok(CredentialsConfig {
-        primary_password: self.primary_password,
+        primary_password: Some(primary_password),
         nc_admin_password: Some(rand::rng()
             .sample_iter(rand::distr::Alphanumeric)
             .take(24).map(char::from)
@@ -65,20 +65,20 @@ async fn derive_credentials_from_primary_password(primary_password: String, nc_a
             .sample_iter(rand::distr::Alphanumeric)
             .take(24).map(char::from)
             .collect()),
-        mfa_backup_codes : Some([0; 16].map( | _ | rand::rng()
+        backup_encryption_password: Some(rand::rng()
             .sample_iter(rand::distr::Alphanumeric)
-            .take(6).map(char::from)
-            .collect()))
+            .take(24).map(char::from)
+            .collect()),
+
     })
 
 }
 
 #[cfg(not(feature = "mock-backend"))]
 async fn derive_credentials_from_primary_password(primary_password: String, nc_admin_password: String) -> Result<CredentialsConfig, String> {
-    let request_url = format!("{}/api/setup/credentials", base_url());
+    let request_url = format!("{}/api/setup/credentials/init", base_url());
     let payload =  serde_json::to_string(&setup::CredentialsInitRequest{
         primary_password: primary_password.clone(),
-        nextcloud_admin_password: nc_admin_password.clone()
     }).map_err(|e| e.to_string())?;
     let result = do_post(&request_url, payload, None).await.map_err(|e| e.to_string())?;
 
@@ -188,13 +188,17 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
         old.with_valid(is_valid.unwrap_or(false)).with_completed(is_complete)
     }));
 
+
+    let mut advancement_in_progress = use_signal(|| false);
     let advance = use_callback(move |evt: MouseEvent| async move {
+        advancement_in_progress.set(true);
         let next_step = match *cred_config_step.peek() {
             CredentialsConfigStep::Passwords => CredentialsConfigStep::Backup,
             CredentialsConfigStep::Backup => CredentialsConfigStep::Verify,
             CredentialsConfigStep::Verify => CredentialsConfigStep::Summary,
             CredentialsConfigStep::Summary => {
                 on_continue.call(evt);
+                // advancement_in_progress.set(false);
                 return;
             }
         };
@@ -220,6 +224,7 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
         } else {
             cred_config_step.set(next_step);
         }
+        advancement_in_progress.set(false);
     }
     );
 
@@ -286,6 +291,7 @@ pub fn CfgCredentials(error: Signal<Option<String>>,
                 button_text: "Back"
             }),
             continue_button: rsx!(ConfigStepContinueButton{
+                advancement_in_progress: advancement_in_progress(),
                 on_click: move |evt| {
                     advance(evt)
                 },
