@@ -1,0 +1,18 @@
+[package]
+name = "grpc-common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tonic = { workspace = true, optional = true, features = ["codegen", "transport"] }
+tokio = { workspace = true, optional = true }
+nca-error = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+triggered = {workspace = true, optional = true}
+listenfd = {version = "1.0.2", optional = true}
+
+[build]
+[features]
+client = ["hyper-util", "tokio", "tonic", "tower", "nca-error"]
+server = ["triggered", "tokio", "tonic", "nca-error", "listenfd"]

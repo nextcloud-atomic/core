@@ -1,12 +1,9 @@
-use triggered::Listener;
 use std::fs;
 use std::path::PathBuf;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::UnixListener;
-use tonic::codegen::tokio_stream::Stream;
 use tonic::codegen::tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
-use tonic::transport::server::{Connected, Router};
+use grpc_common::server::serve_socket_tonic;
 use grpc_occ::api::occ_server::OccServer;
 use grpc_occ::occ::server::OccService;
 
@@ -31,20 +28,5 @@ async fn main() -> Result<(), String> {
     
     serve_socket_tonic(stream, grpc, None).await
         .map_err(|e| format!("An error occurred while running occ server: {e:?}"))?;
-    Ok(())
-}
-
-
-pub async fn serve_socket_tonic<I, IO, IE>(stream: I, grpc: Router, stop_trigger: Option<Listener>) -> Result<(), tonic::transport::Error> where
-    I: Stream<Item = Result<IO, IE>>,
-    IO: AsyncRead + AsyncWrite + Connected + Unpin + Send + 'static,
-    IO::ConnectInfo: Clone + Send + Sync + 'static,
-    IE: Into<Box<dyn std::error::Error + Send + Sync>>,
-{
-    match stop_trigger {
-        Some(trigger) => grpc.serve_with_incoming_shutdown(stream, trigger).await?,
-        None => grpc.serve_with_incoming(stream).await?
-    }
-    
     Ok(())
 }

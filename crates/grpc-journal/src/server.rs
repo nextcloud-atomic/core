@@ -1,8 +1,5 @@
-
 use std::collections::HashMap;
 use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use nca_error::NcaError;
@@ -37,7 +34,7 @@ impl JournalLogStream for JournalLogStreamService {
         let rx = get_log_stream(self.user_logs, self.system_logs, filter.namespace, Some(filter.fields)).await;
         Ok(Response::new(ReceiverStream::new(rx)))
     }
-    
+
     #[cfg(feature = "mock")]
     async fn tail(&self, request: Request<LogFilter>) -> Result<Response<Self::TailStream>, Status> {
         #[cfg(debug_assertions)]
@@ -142,6 +139,7 @@ pub async fn get_log_stream(current_user: bool, system: bool, namespace: Option<
                     },
                     Ok(None) => {
                         break;
+                        #[allow(unreachable_code)]
                         if let Err(e) = tx.blocking_send(Err(Status::cancelled("Unexpected end of journal"))) {
                             eprintln!("Unexpected end of journal\nAlso, an error occurred while cancelling stream: {e:?}");
                         }
@@ -176,7 +174,6 @@ pub async fn get_log_stream(current_user: bool, system: bool, namespace: Option<
                         }
                     }
                 }
-
             }
             if abort {
                 break;
@@ -200,7 +197,6 @@ mod tests {
     use crate::api::journal_log_stream_client::JournalLogStreamClient;
     use crate::api::journal_log_stream_server::JournalLogStreamServer;
     use crate::api::LogFilter;
-    use crate::journal_stream::get_log_stream;
     use super::*;
 
     #[tokio::test]

@@ -1,14 +1,11 @@
-
-use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
-use tokio_stream::{Stream, StreamExt};
 use tonic::codegen::http::HeaderName;
 use tonic::transport::Server;
-use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer, ExposeHeaders};
+use tower_http::cors::{CorsLayer, ExposeHeaders};
 use grpc_journal::api::journal_log_stream_server::JournalLogStreamServer;
-use grpc_journal::journal_stream::JournalLogStreamService;
+use grpc_journal::server::JournalLogStreamService;
 
 const DEFAULT_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const DEFAULT_EXPOSED_HEADERS: [HeaderName; 3] = [

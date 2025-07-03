@@ -94,7 +94,7 @@ pub mod server {
             let mut buf = [0];
             match stream.read(&mut buf) {
                 Err(e) => {
-                    eprintln!("Error reading from stdout: {:?}", e);
+                    eprintln!("Error reading from stdout: {e:?}");
                     break;
                 },
                 Ok(count) => {
@@ -118,13 +118,8 @@ pub mod server {
 
 pub mod client {
     use std::path::PathBuf;
-    use std::sync::Arc;
-    use hyper_util::rt::TokioIo;
-    use tokio::io;
-    use tokio::net::UnixStream;
     use tonic::Streaming;
-    use tonic::transport::{Channel, Endpoint, Uri};
-    use tower::service_fn;
+    use grpc_common::client::get_socket_channel;
     use nca_error::NcaError;
     use crate::api::{Command, CommandOutput, OutputType};
     use crate::api::occ_client::OccClient;
@@ -134,7 +129,7 @@ pub mod client {
         let channel = get_socket_channel(
             PathBuf::from(socket_path),
             "http://occ.nextcloudatomic.local".to_string()
-        ).await.unwrap();
+        ).await?;
 
         // let channel = Channel::from_shared(format!("http://{}", &addr)).unwrap()
         //     .connect()
@@ -190,21 +185,4 @@ pub mod client {
         }
     }
 
-    pub async fn get_socket_channel(socket_path: PathBuf, uri: String) -> Result<Channel, NcaError> {
-
-        let socket = Arc::new(socket_path);
-
-        Endpoint::try_from(uri)
-            .map_err( NcaError::new_server_config_error)?
-            .connect_with_connector(service_fn(move |_: Uri| {
-                let socket = Arc::clone(&socket);
-                // Connect to a Uds socket
-                async move { Ok::<_, io::Error>(TokioIo::new(UnixStream::connect(&*socket).await?)) }
-            }))
-            .await
-            .map_err(NcaError::new_io_error)
-
-        // let channel = Channel::from_static("");
-
-    }
 }

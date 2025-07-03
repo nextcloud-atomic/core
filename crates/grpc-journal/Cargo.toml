@@ -17,6 +17,8 @@ hyper-util = { version = "0.1.10", optional = true }
 tower-http = {version = "0.5", features = ["cors"], optional = true}
 systemd = { version = "0.10.0", features = ["default", "serde", "systemd_v245"], optional = true }
 futures-util = { version = "0.3.31", optional = true }
+grpc-common = {workspace = true, optional = true, features = ["client"]}
+clap = { version = "4.5.39", features = ["derive"], optional = true }
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -26,8 +28,14 @@ default = ["api", "types"]
 types = ["tonic/codegen"]
 api = ["tonic/default", "dep:tonic-web", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:hyper-util", "dep:tower-http", "dep:systemd", "dep:futures-util"]
 mock = []
+client = ["grpc-common", "clap", "grpc-common/client"]
 
 [[bin]]
 name = "dummy-logstream"
-path = "src/bin/dummy_logstream.rs"
+path = "src/bin/mock_server.rs"
 required-features = ["mock", "api", "types"]
+
+[[bin]]
+name = "nca-logs"
+path = "src/bin/nca_logs.rs"
+required-features = ["client"]
