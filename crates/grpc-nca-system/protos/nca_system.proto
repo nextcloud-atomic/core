@@ -1,0 +1,60 @@
+syntax = "proto3";
+package nca_system;
+
+message PrimaryPassword {
+  string value = 1;
+}
+
+message Empty {}
+
+message StatusResponse {
+  uint32 status = 1;
+  string statusText = 2;
+}
+
+message PasswordResponse {
+  uint32 status = 1;
+  string password = 2;
+}
+
+message CredentialsInitResponse {
+  string diskEncryptionRecoveryPassword = 1;
+  string backupPassword = 2;
+  string salt = 3;
+}
+
+message NextcloudConfig {
+  optional string domain = 1;
+  optional string admin_password = 2;
+}
+
+message CommandOutput {
+  optional int32 rc = 1;
+  optional string stdout = 2;
+  optional string stderr = 3;
+}
+
+service Credentials {
+  rpc SetNextcloudAdminPassword(PrimaryPassword) returns (StatusResponse);
+  rpc SetBackupPassword(PrimaryPassword) returns (StatusResponse);
+  rpc GenerateSalt(Empty) returns (StatusResponse);
+  rpc InitializeCredentials(PrimaryPassword) returns (CredentialsInitResponse);
+  rpc CompleteSetup(Empty) returns (StatusResponse);
+}
+
+service Nextcloud {
+  rpc UpdateConfig(NextcloudConfig) returns (NextcloudConfig);
+  rpc HardReset(Empty) returns (CommandOutput);
+}
+
+service System {
+  rpc unlock_from_systemd_credentials(Empty) returns (StatusResponse);
+}
+
+service Storage {
+  rpc AddDiskEncryptionPassword(PrimaryPassword) returns (PasswordResponse);
+}
+
+service Services {
+
+}

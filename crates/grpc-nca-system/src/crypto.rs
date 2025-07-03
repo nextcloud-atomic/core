@@ -4,6 +4,8 @@ use ring::aead::{AES_256_GCM, NONCE_LEN};
 use ring::hkdf::HKDF_SHA256;
 use ring::pbkdf2::PBKDF2_HMAC_SHA512;
 use ring::rand::SecureRandom;
+use nca_error::NcaError;
+use std::convert::TryFrom;
 
 static KEK_CIPHER: &aead::Algorithm = &AES_256_GCM;
 const KEK_LENGTH: usize = 256 / 8;
@@ -13,6 +15,24 @@ const B32_ENCODING_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 {paddi
 pub type Salt = [u8; SALT_LENGTH];
 pub type Nonce = [u8; NONCE_LEN];
 pub type AesKey = [u8; KEK_LENGTH];
+
+
+
+pub fn try_parse_salt(value: &str) -> Result<Salt, NcaError> {
+    let decoded = b32_decode(value)
+        .map_err(|e| NcaError::new_crypto_error(e))?;
+    
+    match decoded.len() {
+        SALT_LENGTH => {
+            let mut buf = [0u8; SALT_LENGTH];
+            buf.copy_from_slice(decoded.as_slice());
+            Ok(buf)
+        },
+        length => Err(NcaError::new_crypto_error(
+            format!("Could not parse string into salt: invalid length (was {length} instead of {SALT_LENGTH})")
+        ))
+    }
+}
 
 #[derive(Debug, PartialEq)]
 struct HkdfMy<T: core::fmt::Debug + PartialEq>(T);

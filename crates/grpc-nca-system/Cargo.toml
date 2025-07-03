@@ -1,0 +1,45 @@
+[package]
+name = "grpc-nca-system"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+prost = "0.13"
+tonic = { version = "0.12", default-features = false }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"], optional = true }
+nca-error = {version = "0.1.0", path = "../nca-error"}
+nca-system-api = {path = "../nca-system-api", features = ["backend"]}
+ring = "0.17.14"
+base32 = "0.5.1"
+grpc-common = {workspace = true}
+clap = { version = "4.5.30", features = ["derive"], optional = true }
+sysinfo = { version = "0.35.2", optional = true }
+block-utils = { version = "0.11.1", optional = true }
+blockdev = { version = "0.1.2", optional = true }
+#blkid = { version = "1.0.1", optional = true }
+rsblkid = { version = "0.4.1", optional = true }
+url = "2.5.4" # for side effects (issues with building rsblkid)
+#tower-http = { version = "0.6.6", features = ["trace"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[features]
+default = []
+types = ["tonic/codegen"]
+api = ["tonic/default", "tokio", "nca-error/tonic", "grpc-common/server", "block-utils", "sysinfo", "blockdev", "rsblkid"]
+client = ["grpc-common/client"]
+cli = ["grpc-common/client", "tokio", "clap"]
+mock = []
+blockdev = ["dep:blockdev"]
+
+[[bin]]
+name = "nca-system"
+path = "src/bin/server.rs"
+required-features = ["api"]
+
+[[bin]]
+name = "ncatomic"
+path = "src/bin/client.rs"
+required-features = ["cli"]

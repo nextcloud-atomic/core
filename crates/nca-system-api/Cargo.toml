@@ -8,11 +8,12 @@ edition = "2021"
 zbus_systemd = { version = "0", features = ["systemd1"], optional = true }
 libsystemd = {workspace = true, optional = true}
 nca-error = {path = "../nca-error", optional = true}
-grpc-occ = {path = "../grpc-occ", optional = true}
+grpc-occ = {path = "../grpc-occ", optional = true, features = ["api", "client"]}
+grpc-common = {workspace = true, optional = true, features = ["server"]}
 serde = { workspace = true, features = ["derive"] }
-tonic = { version = "0.12.3", optional = true }
+tonic = { workspace = true, optional = true }
 users = { version = "0.11", optional = true}
 
 [features]
 default = ["backend"]
-backend = ["zbus_systemd", "libsystemd", "nca-error", "grpc-occ", "tonic", "nca-error/tonic", "users"]
+backend = ["zbus_systemd", "libsystemd", "nca-error", "grpc-common", "grpc-occ", "tonic", "nca-error/tonic", "users"]

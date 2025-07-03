@@ -17,11 +17,12 @@ tonic-web = { version = "0.12" }
 libsystemd = {workspace = true }
 nca-system-api = {path = "../nca-system-api", features = ["backend"] }
 nca-api-model = {path = "../nca-api-model"}
-grpc-occ = {path = "../grpc-occ", features = ["default"]}
+grpc-occ = {path = "../grpc-occ", features = ["default", "client"]}
+grpc-common = {workspace = true}
+grpc-nca-system = {path = "../grpc-nca-system", optional = false, features = ["client"]}
 nca-caddy = {path = "../nca-caddy"}
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 notify = "8.0"
-ring = "0.17.14"
 
 http = "1.2.0"
 serde = { workspace = true, features = ["derive"] }
@@ -30,8 +31,7 @@ dioxus = { version = "0.6", default-features = true, features = ["fullstack"] }
 serde_json = "1.0.139"
 rand = { version = "0.9" }
 paspio = "1.0"
-url = "2.5"
-base32 = "0.5.1"
+url = "2.5.4" # for side effects (issues with building rsblkid)
 
 
 [[bin]]

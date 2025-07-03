@@ -1,0 +1,28 @@
+#cloud-config
+
+package_upgrade: false
+packages:
+  - cryptsetup
+  - btrfs-progs
+
+#write_files:
+#  - path: /etc/systemd/system/nca-system.service
+#    content: |
+      
+runcmd:
+  - mkdir -p /etc/ncatomic/credentials /etc/ncatomic/nc-aio/credentials
+  - cp /mnt/testfiles/nca-system /usr/local/bin/
+  - chmod +x /usr/local/bin/nca-system
+  - cp /mnt/testfiles/*.socket /etc/systemd/system/
+  - cp /mnt/testfiles/*.service /etc/systemd/system/
+  - systemctl daemon-reload
+  - systemctl start nca-system.socket
+#  - |
+#    dd if=/dev/urandom of=/var/cryptdisk bs=1M count=1024
+#    loopdev="$(losetup -f --show /var/cryptdisk)"
+#    echo -n 'insecure password' | cryptsetup luksFormat --type luks2 "$loopdev" -
+#    echo -n 'insecure password' | cryptsetup luksOpen "$loopdev" cryptdisk -
+#    mkfs.btrfs -L cryptdisk /dev/mapper/cryptdisk
+#    echo -n 'insecure password' | systemd-cryptenroll /dev/XXX --tpm2-device=auto --tpm2-pcrs=7 --unlock-key-file=-
+    
+    

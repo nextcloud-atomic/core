@@ -3666,7 +3666,6 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "axum-extra",
- "base32",
  "dioxus",
  "grpc-common",
  "grpc-journal",
@@ -3681,7 +3680,6 @@ dependencies = [
  "notify",
  "paspio",
  "rand 0.9.1",
- "ring",
  "serde",
  "serde_json",
  "tokio",

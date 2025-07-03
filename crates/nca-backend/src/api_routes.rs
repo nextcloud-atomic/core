@@ -10,12 +10,16 @@ use nca_error::NcaError;
 use nca_system_api::systemd::{types::ServiceStatus, api::get_service_status};
 use nca_caddy::{CaddyClient, config::builders};
 use nca_system_api::occ::api::{set_nc_system_config, NcConfigValue};
-use nca_system_api::systemd::api::{set_systemd_credential, start_service};
 use nca_api_model::{setup};
 use crate::config::Config;
 use paspio::entropy;
-use nca_api_model::setup::{CredentialsConfig, CredentialsInitRequest};
-use crate::crypto::{b32_encode, create_key_from_pass, derive_key, generate_salt};
+use tonic::transport::Channel;
+use grpc_nca_system::api;
+use grpc_nca_system::api::credentials_client::CredentialsClient;
+use grpc_nca_system::api::nextcloud_client::NextcloudClient;
+use grpc_nca_system::api::NextcloudConfig;
+use grpc_nca_system::api::system_client::SystemClient;
+use nca_api_model::setup::{CredentialsInitResponse, CredentialsInitRequest, Status};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/api/service/*name")]
@@ -25,7 +29,7 @@ pub struct ServiceName {
 #[cfg(not(feature = "mock-systemd"))]
 pub(crate) async fn service_status(ServiceName{ name: svc_name }: ServiceName) -> Result<Json<ServiceStatus>, NcaError> {
     #[cfg(debug_assertions)]
-    eprintln!("Retrieving service status for {}", svc_name);
+    eprintln!("Retrieving service status for {svc_name}");
     let status = get_service_status(svc_name).await?;
     Ok(Json(status))
 }
@@ -52,7 +56,7 @@ pub(crate) async fn activate_endpoint_nextcloud(Extension(config): Extension<Con
                 }
             }
             #[cfg(not(feature = "mock-occ"))]
-            set_nc_default_domain(config.occ_socket, params.trusted_url.clone()).await?;
+            set_nc_default_domain(config.occ_channel, params.trusted_url.clone()).await?;
             
             let lb_cookie_secret: String = rand::rng()
                 .sample_iter(rand::distr::Alphanumeric)
@@ -78,9 +82,9 @@ pub(crate) async fn activate_endpoint_nextcloud(Extension(config): Extension<Con
     Ok(Json(()))
 }
 
-async fn add_nc_trusted_domain(occ_socket_path: String, domain: String) -> Result<String, NcaError> {
+async fn add_nc_trusted_domain(occ_channel: Channel, domain: String) -> Result<String, NcaError> {
     use nca_system_api::occ::api::{NcConfigValue, set_nc_system_config};
-    let response = set_nc_system_config(occ_socket_path,
+    let response = set_nc_system_config(occ_channel,
                                             "trusted_domains".to_string(),
                                             Some(11),
                                             NcConfigValue::String(domain))
@@ -90,9 +94,9 @@ async fn add_nc_trusted_domain(occ_socket_path: String, domain: String) -> Resul
         .map(|_| "occ command terminated successfully.".to_string())
 }
 
-async fn set_nc_default_domain(occ_socket_path: String, domain: String) -> Result<String, NcaError> {
-    add_nc_trusted_domain(occ_socket_path.clone(), domain.clone()).await?;
-    let response = set_nc_system_config(occ_socket_path.clone(),
+async fn set_nc_default_domain(occ_channel: Channel, domain: String) -> Result<String, NcaError> {
+    add_nc_trusted_domain(occ_channel.clone(), domain.clone()).await?;
+    let response = set_nc_system_config(occ_channel.clone(),
                                         "overwrite.cli.url".to_string(),
                                         None,
                                         // TODO: get protocol from nc config
@@ -100,10 +104,10 @@ async fn set_nc_default_domain(occ_socket_path: String, domain: String) -> Resul
         .await?;
 
     handle_occ_output(response).await?;
-    let response = set_nc_system_config(occ_socket_path,
+    let response = set_nc_system_config(occ_channel,
                                         "overwritehost".to_string(),
                                         None,
-                                        NcConfigValue::String(format!("{domain}")))
+                                        NcConfigValue::String(domain.to_string()))
         .await?;
 
     handle_occ_output(response).await
@@ -116,74 +120,105 @@ fn check_is_secure_password(pw: &str) -> bool {
     if pw.is_empty() {
         return false;
     }
-    entropy(&pw) >= 130.0
+    entropy(pw) >= 130.0
 }
 
-pub async fn configure_nextcloud_atomic(Extension(config): Extension<Config>, Json(params): Json<setup::NcAtomicInitializationConfig>) -> Result<(), NcaError> {
+pub async fn configure_nextcloud_atomic(Extension(config): Extension<Config>, Json(params): Json<setup::ServicesConfig>) -> Result<(), NcaError> {
     
-    let url = Url::parse(format!("https://{}:80/", params.services.nextcloud_domain).as_str())
+    let url = Url::parse(format!("https://{}:80/", params.nextcloud_domain).as_str())
         .map_err(|e| NcaError::FaultySetup(format!("Failed to parse nextcloud domain: {e:?}")))?;
     if url.host_str()
-        .ok_or(NcaError::FaultySetup("Failed to parse nextcloud domain (couldn't get host)".to_string()))? != params.services.nextcloud_domain.as_str() {
-        return Err(NcaError::FaultySetup(format!("{} is not a valid nextcloud domain", params.services.nextcloud_domain)));
+        .ok_or(NcaError::FaultySetup("Failed to parse nextcloud domain (couldn't get host)".to_string()))? != params.nextcloud_domain.as_str() {
+        return Err(NcaError::FaultySetup(format!("{} is not a valid nextcloud domain", params.nextcloud_domain)));
     }
 
-    // if !check_is_secure_password(&params.services.nextcloud_password) {
-    //     return Err(NcaError::FaultySetup("The nextcloud admin password is too weak!".to_string()));
-    // }
-    
-    // let disk_encryption_password = 
-
+    if !check_is_secure_password(&params.nextcloud_password) {
+        return Err(NcaError::FaultySetup("The nextcloud admin password is too weak!".to_string()));
+    }
     #[cfg(not(feature = "mock-systemd"))]
     {
-        set_systemd_credential(params.services.nextcloud_domain.clone(), format!("{}/nc-aio/credentials/nc_domain.txt", config.config_path), None).await?;
-        // set_systemd_credential(params.services.nextcloud_password.clone(), format!("{}/nc-aio/credentials/nc_password.txt", config.config_path), None).await?;
-        // set_systemd_credential(salt.clone(), format!("{}/credentials/ncatomic_salt.txt", config.config_path), None).await?;
-        start_service("nca-unlock.service".to_string()).await?;
+        let channel = config.nca_system_channel;
+        let mut nc_client = NextcloudClient::new(channel.clone());
+        let mut system_client = SystemClient::new(channel.clone());
+
+        let _nc_cfg = nc_client.update_config(
+            tonic::Request::new(NextcloudConfig {
+                domain: Some(params.nextcloud_domain),
+                admin_password: Some(params.nextcloud_password)
+            })
+        ).await?.into_inner();
+        
+        let _result = system_client.unlock_from_systemd_credentials(
+            tonic::Request::new(api::Empty{})
+        ).await?;
     }
 
     Ok(())
 }
 
-pub async fn generate_credentials(Extension(config): Extension<Config>, Json(params): Json<CredentialsInitRequest>) -> Result<Json<CredentialsConfig>, NcaError> {
+pub async fn complete_credentials_setup(Extension(config): Extension<Config>) -> Result<Json<Status>, NcaError> {
 
-    if !check_is_secure_password(&params.nextcloud_admin_password) {
-        return Err(NcaError::FaultySetup("The nextcloud admin password is too weak!".to_string()));
+    #[cfg(not(feature = "mock-systemd"))]
+    {
+        let mut client = CredentialsClient::new(config.nca_system_channel);
+
+        let result = client.complete_setup(tonic::Request::new(api::Empty{})).await?.into_inner();
+        Ok(Json(Status {
+            status: result.status_text
+        }))
     }
+
+    #[cfg(feature = "mock-systemd")]
+    {
+        Ok(Json(Status {
+            status: "success".to_string()
+        }))
+    }
+}
+
+pub async fn generate_credentials(Extension(config): Extension<Config>, Json(params): Json<CredentialsInitRequest>) -> Result<Json<CredentialsInitResponse>, NcaError> {
+
     if !check_is_secure_password(&params.primary_password) {
         return Err(NcaError::FaultySetup("The nextcloud admin password is too weak!".to_string()));
     }
 
-    // let salt: String = rand::rng()
-    //     .sample_iter(rand::distr::Alphanumeric)
-    //     .take(12).map(char::from)
-    //     .collect();
-    // let disk_encryption_password =
+    #[cfg(not(feature = "mock-systemd"))]
+    {
+        let mut client = CredentialsClient::new(config.nca_system_channel);
+
+        let credentials = client.initialize_credentials(
+            tonic::Request::new(params.primary_password.into())
+        ).await?.into_inner();
+
+        Ok(Json(CredentialsInitResponse {
+            disk_encryption_password: credentials.disk_encryption_recovery_password,
+            backup_password: credentials.backup_password,
+            salt: credentials.salt
+        }))
+    }
     
-    let salt = generate_salt();
-    let salt_b32 = b32_encode(&salt);
-    let primary_key = create_key_from_pass(&salt, params.primary_password.clone());
-    let disk_encryption_password = derive_key(&primary_key, &salt, "NCA_DISK_ENCRYPTION".to_string())
-        .map_err(|e| NcaError::CryptoError(format!("Failed to derive key from password: {e:?}")))?;
-    let disk_encryption_password_b32 = b32_encode(&disk_encryption_password);
-    let backup_password = derive_key(&primary_key, &salt, "NCA_BACKUP_ENCRYPTION".to_string())
-        .map_err(|e| NcaError::CryptoError(format!("Failed to derive key from password: {e:?}")))?;
-    let backup_password_b32 = b32_encode(&backup_password);
+    #[cfg(feature = "mock-systemd")]
+    {
+        Ok(Json(CredentialsInitResponse {
+            disk_encryption_password: "fakepassword".to_string(),
+            backup_password: "fakepassword".to_string(),
+            salt: "fakesalt".to_string()
+        }))
+    }
+}
+
+pub async fn hard_reset_nextcloud(Extension(config): Extension<Config>) -> Result<Json<Status>, NcaError> {
 
     #[cfg(not(feature = "mock-systemd"))]
     {
-        // set_systemd_credential(params.services.nextcloud_domain.clone(), format!("{}/nc-aio/credentials/nc_domain.txt", config.config_path), None).await?;
-        set_systemd_credential(params.nextcloud_admin_password.clone(), format!("{}/nc-aio/credentials/nc_password.txt", config.config_path), None).await?;
-        // todo: add disk encryption password
-        set_systemd_credential(backup_password_b32.clone(), format!("{}/credentials/ncatomic_backup_password.txt", config.config_path), None).await?;
-        set_systemd_credential(salt_b32.clone(), format!("{}/credentials/ncatomic_salt.txt", config.config_path), None).await?;
+        let mut client = NextcloudClient::new(config.nca_system_channel);
+        client.hard_reset(tonic::Request::new(api::Empty{}))
+            .await?
+            .into_inner();
+        Ok(Json(Status {
+            status: "successfully performed Nextcloud hard reset".to_string()
+        }))
     }
-    Ok(Json(CredentialsConfig {
-        primary_password: params.primary_password,
-        salt: salt_b32,
-        disk_encryption_password: disk_encryption_password_b32,
-        backup_password: backup_password_b32,
-    }))
 }
 
 #[cfg(feature = "mock-systemd")]

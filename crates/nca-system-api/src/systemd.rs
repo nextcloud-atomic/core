@@ -40,6 +40,7 @@ pub mod types {
 
 #[cfg(feature = "backend")]
 pub mod api {
+    use std::ffi::OsStr;
     use std::io::Write;
     use std::process::Stdio;
     use zbus_systemd::{zbus, systemd1::ManagerProxy};
@@ -76,7 +77,7 @@ pub mod api {
         let conn = zbus::Connection::system().await?;
         let manager = ManagerProxy::new(&conn).await?;
         manager.start_unit(name, "replace".to_string()).await
-            .map_err(|e| NcaError::SystemdError(format!("{:?}", e)))?;
+            .map_err(|e| NcaError::SystemdError(format!("Failed to start service: {e:?}")))?;
         Ok(())
     }
 
@@ -85,15 +86,42 @@ pub mod api {
         Ok(())
     }
 
-    pub async fn set_systemd_credential(value: String, path: String, name: Option<String>) -> Result<(), NcaError> {
+    pub async fn set_systemd_credential(value: String, path: String, name: Option<String>, pretty: bool) -> Result<String, NcaError> {
         #[cfg(debug_assertions)]
-        eprintln!("Creating systemd credential at path: {path}");
+        eprintln!("Creating systemd credential at path: '{path}'!");
         let mut cmd = std::process::Command::new("/usr/bin/systemd-creds");
-        cmd.arg("encrypt");
+        let mut args = vec!["encrypt".to_string()];
         if let Some(cred_name) = name {
-            cmd.arg(format!("--name={cred_name}"));
+            args.push(format!("--name={cred_name}"));
         }
-        let mut proc = cmd.args(["-", &path]).stdin(Stdio::piped()).spawn()
+        args.append(&mut vec!["-".to_string(), path.clone()]);
+        if pretty {
+            args.push("--pretty".to_string());
+        }
+        let cmd_with_args = cmd
+            .args(args.as_slice())
+            .stdin(Stdio::piped())
+            .stdout(match path.as_str() {
+                "-" => {
+                    #[cfg(debug_assertions)]
+                    println!("Using a pipe for output");
+                    Stdio::piped()
+                },
+                _ => Stdio::inherit()
+            });
+
+        #[cfg(debug_assertions)]
+        {
+            let mut args = vec![cmd_with_args.get_program().to_string_lossy().to_string(),];
+            args.append(&mut cmd_with_args.get_args()
+                .map(|arg: &OsStr| {
+                    arg.to_string_lossy().to_string()
+                }).collect::<Vec<String>>());
+            eprintln!("Running systemd-creds like: {}", args.join(" "));
+
+        }
+        let mut proc = cmd_with_args
+            .spawn()
             .map_err(|e| NcaError::IOError(format!("Failed to run systemd-creds: {:?}", e)))?;
         match proc.stdin.as_mut() {
             None => Err(NcaError::IOError("Failed to get stdin of systemd-creds".to_string())),
@@ -112,10 +140,64 @@ pub mod api {
         eprintln!("Waiting for child process to finish ...");
         let out = proc.wait_with_output().map_err(|e| NcaError::IOError(format!("Failed to run systemd-creds: {:?}", e)))?;
         if out.status.success() {
-            Ok(())
+            String::from_utf8(out.stdout).map_err(|e| NcaError::IOError(format!("Failed to parse command output: {:?}", e)))
         } else {
             Err(NcaError::IOError(format!("Failed to create systemd credentials (exit code: {:?}): {}", out.status.code(), String::from_utf8_lossy(&out.stderr))))
         }
+    }
+
+    pub async fn set_fallback_disk_encryption_password(password: String, device_path: String) -> Result<(), NcaError> {
+        // let password_credential = {
+        //     let mut cmd = std::process::Command::new("/usr/bin/systemd-creds");
+        //     let mut proc = cmd.args(vec!["encrypt", "-p", "--name=cryptenroll.new-passphrase", "-", "-"]).spawn()
+        //         .map_err(|e| NcaError::IOError(format!("Failed to run systemd-creds: {:?}", e)))?;
+        //     match proc.stdin.as_mut() {
+        //         None => Err(NcaError::IOError("Failed to get stdin of systemd-creds".to_string())),
+        //         Some(stdin) => {
+        //             stdin.write_all(password.as_bytes()).map_err(|e| {
+        //                 NcaError::IOError(format!("Failed to create systemd credential: {:?}", e))
+        //             })
+        //         }
+        //     }?;
+        //     let out = proc.wait_with_output().map_err(|e| NcaError::IOError(format!("Failed to run systemd-creds: {:?}", e)))?;
+        //     if !out.status.success() {
+        //         return Err(NcaError::IOError(format!("Failed to create systemd credential (exit code {:?}): {}", out.status.code(), String::from_utf8_lossy(&out.stderr))))?
+        //     }
+        //     String::from_utf8(out.stdout).map_err(|e| NcaError::IOError(format!("Failed to parse systemd-creds output: {:?}", e)))?
+        // };
+        let password_credential = set_systemd_credential(password, "-".to_string(), Some("cryptenroll.new-passphrase".to_string()), true).await?;
+        #[cfg(debug_assertions)]
+        eprintln!("Created systemd credential from password: {password_credential}");
+        
+        let mut cmd = std::process::Command::new("/usr/bin/systemd-run");
+        let cmd_with_args = cmd
+            .stdout(Stdio::piped())
+            .args(vec!["-p", password_credential.replace("\\\n        ", "").replace("\n", "").as_str(), "-P", "--wait", "--slice-inherit",
+                      "/usr/bin/systemd-cryptenroll", "--unlock-tpm2-device=auto", "--wipe-slot=password", "--password", device_path.as_str()]);
+        #[cfg(debug_assertions)]
+        {
+            let mut args = vec![cmd_with_args.get_program().to_string_lossy().to_string(),];
+            args.append(&mut cmd_with_args.get_args()
+                .map(|arg: &OsStr| {
+                    arg.to_string_lossy().to_string()
+                }).collect::<Vec<String>>());
+            eprintln!("Running systemd-run like: {}", args.join(" "));
+
+        }
+        let proc = cmd_with_args.spawn()
+            .map_err(|e| NcaError::IOError(format!("Failed to run systemd-cryptenroll: {e:?}")))?;
+        let out = proc.wait_with_output().map_err(|e| NcaError::IOError(format!("Failed to run systemd-cryptenroll: {e:?}")))?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            let msg = format!("Failed add password for encrypted disk (exit code: {:?}): {}\n\n{}",
+                              out.status.code().unwrap_or(-1),
+                              String::from_utf8_lossy(&out.stdout),
+                              String::from_utf8_lossy(&out.stderr));
+            eprintln!("{}", &msg);
+            Err(NcaError::IOError(msg))
+        }
+        
     }
 }
 
