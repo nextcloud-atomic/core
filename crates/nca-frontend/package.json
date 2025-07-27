@@ -1,7 +1,7 @@
 {
   "scripts": {
     "start": "parcel watch _grpc_client.ts",
-    "release": "rm -rf dist/*; parcel build style.ts _grpc_client.ts && ! [ -f dist/*.js ] || mv dist/[!_]*.js dist/[!_]*.js.map assets/js/; ! [ -f dist/*.css ] || mv dist/*.css dist/*.css.map assets/css/",
+    "release": "bash -c 'rm -rf dist/*; parcel build style.ts _grpc_client.ts && { files=(dist/*.js); ((${#files[@]} == 0)); } || mv dist/[!_]*.js dist/[!_]*.js.map assets/js/; ! [ -f dist/*.css ] || mv dist/*.css dist/*.css.map assets/css/'",
     "protoc": "npx protoc --ts_out ./grpc-journal --proto_path ../grpc-journal/protos ../grpc-journal/protos/api.proto"
   },
   "devDependencies": {
