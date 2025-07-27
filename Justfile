@@ -1,3 +1,5 @@
+setup-frontend:
+    cd crates/nca-frontend && npm install
 serve-frontend:
     cd crates/nca-frontend && dx serve --features mock-backend
 watch-frontend:
@@ -5,7 +7,7 @@ watch-frontend:
 watch-backend:
     HOST=0.0.0.0 PORT=3000 mold -run cargo watch --workdir /workspace/ -w crates/nca-backend -w crates/nca-system-api -w crates/nca-error -w crates/grpc-journal -w crates/nca-caddy -w public --no-gitignore -x "run --features insecure,mock-journal,mock-systemd,mock-occ,mock-fs,watch --bin nca-backend"
 
-build target='release':
+buildscript target='release':
     #!/usr/bin/env bash
     set -euxo pipefail
 
@@ -36,6 +38,33 @@ build target='release':
 
 tailwind:
     cd /workspace/crates/nca-frontend && npx tailwindcss -i ./input.css -o ./assets/css/tailwind.css --watch
+
+[working-directory: './.devcontainer']
+builder-image:
+    docker build -t ncatomic-core-builder -f ./Dockerfile .
+
+build +ARGS='release':
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    
+    use_docker=false
+    args=()
+    for arg in {{ARGS}}
+    do
+      if [[ "$arg" == "--docker" ]]
+      then
+        use_docker=true
+      else
+        args+=("$arg")
+      fi
+    done
+
+    if [[ "$PWD" == "/workspace" ]]
+    then
+      just buildscript "${args[@]}"
+    else
+      docker run --rm --entrypoint '' --user "$(id -u):$(id -g)" --workdir /workspace -v "$PWD"/:/workspace:cached -v nca-core-builder-target:/workspace/target -v nca-core-builder-node_modules:/workspace/crates/nca-frontend/node_modules ncatomic-core-builder just setup-frontend build "${args[@]}"
+    fi
 
 default:
     @just --list
