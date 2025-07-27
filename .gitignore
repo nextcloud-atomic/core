@@ -2,7 +2,8 @@
 dist
 node_modules
 .parcel-cache
-/public
+/public/
+/out/
 .idea/
 mkosi.crt
 mkosi.key
