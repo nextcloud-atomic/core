@@ -6,13 +6,14 @@ services:
       dockerfile: Dockerfile
 
     volumes:
-      - ..:/workspace:cached
+      - ..:/workspace:U,cached
       # Give access to ssh keys on the host (Is there a better way to do this?)
-      - ~/.ssh:/home/vscode/.ssh:cached
+      - ~/.ssh:/home/vscode/.ssh:cached,ro
       # We need this so docker in docker works
-      - /var/run/docker.sock:/var/run/docker.sock
+      #- /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/user/1000/podman/podman.sock:/var/run/docker.sock
       - target:/workspace/target # Set target as a volume for performance.
-      - ../target:/host-target
+      - ../target:/host-target:U
       # Uncomment the next line to improve performance when using node.
       - node_modules:/workspace/crates/nca-frontend/node_modules
 
@@ -24,6 +25,10 @@ services:
       - "127.0.0.1:3000:3000"
 
     working_dir: /workspace
+
+    security_opt:
+      # Disable selinux labels to allow access to mounted volumes on both host and container
+      - "label=disable"
 
 volumes:
   target:

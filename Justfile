@@ -1,5 +1,5 @@
 setup-frontend:
-    cd crates/nca-frontend && npm install
+    cd crates/nca-frontend && cp -r assets-src/* assets/ && npm install
 serve-frontend:
     cd crates/nca-frontend && dx serve --features mock-backend
 watch-frontend:
@@ -41,7 +41,7 @@ tailwind:
 
 [working-directory: './.devcontainer']
 builder-image:
-    docker build -t ncatomic-core-builder -f ./Dockerfile .
+    podman build -t localhost/ncatomic-core-builder -f ./Dockerfile .
 
 build +ARGS='release':
     #!/usr/bin/env bash
@@ -63,7 +63,13 @@ build +ARGS='release':
     then
       just buildscript "${args[@]}"
     else
-      docker run --rm --entrypoint '' --user "$(id -u):$(id -g)" --workdir /workspace -v "$PWD"/:/workspace:cached -v nca-core-builder-target:/workspace/target -v nca-core-builder-node_modules:/workspace/crates/nca-frontend/node_modules ncatomic-core-builder just setup-frontend build "${args[@]}"
+      podman image exists localhost/ncatomic-core-builder || {
+        echo "No local builder image found, triggering build in 5s ..."
+        sleep 5
+        just builder-image
+      }
+      podman run --rm --userns=keep-id -v nca-core-builder-target:/volumes/target:z -v nca-core-builder-node_modules:/volumes/node_modules:z localhost/ncatomic-core-builder sudo chown 1000:1000 /volumes/{target,node_modules}
+      podman run --rm --entrypoint '' --userns=keep-id --user "$(id -u):$(id -g)" --workdir /workspace -v "$PWD"/:/workspace:cached,z -v nca-core-builder-target:/workspace/target:z -v nca-core-builder-node_modules:/workspace/crates/nca-frontend/node_modules localhost/ncatomic-core-builder bash -c "sudo chown 1000:1000 /workspace/target /workspace/crates/nca-frontend/node_modules && just setup-frontend build \"${args[@]}\""
     fi
 
 default:
